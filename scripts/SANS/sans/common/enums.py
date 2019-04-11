@@ -102,7 +102,7 @@ class SANSInstrument(object):
     pass
 
 
-@serializable_enum("ISIS", "NoFacility")
+@serializable_enum("ISIS", "ANSTO", "NoFacility")
 class SANSFacility(object):
     pass
 
