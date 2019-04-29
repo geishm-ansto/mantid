@@ -95,7 +95,7 @@ QGroupBox::title {
       <item>
        <widget class="QStackedWidget" name="main_stacked_widget">
         <property name="currentIndex">
-         <number>0</number>
+         <number>1</number>
         </property>
         <widget class="QWidget" name="run_page">
          <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -463,7 +463,7 @@ QGroupBox::title {
              <enum>Qt::NoFocus</enum>
             </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>2</number>
             </property>
             <widget class="QWidget" name="reduction_tab">
              <attribute name="title">
@@ -826,9 +826,9 @@ QGroupBox::title {
                   </widget>
                  </item>
                  <item>
-                  <widget class="QCheckBox" name="blocked_beam_checkbox">
+                  <widget class="QCheckBox" name="blocked_beam_correction_checkbox">
                    <property name="text">
-                    <string>Bolcked Beam</string>
+                    <string>Blocked Beam</string>
                    </property>
                   </widget>
                  </item>

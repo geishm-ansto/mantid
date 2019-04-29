@@ -20,23 +20,7 @@ import sys
 import time
 import traceback
 
-#from mantid.api import (FileFinder)
-#from mantid.kernel import Logger, ConfigService
-
-#from sans.common.constants import ALL_PERIODS
-#from sans.common.enums import (BatchReductionEntry, RangeStepType, SampleShape, FitType, RowState, SANSInstrument)
-#from sans.gui_logic.gui_common import (get_reduction_mode_strings_for_gui, get_string_for_gui_from_instrument,
-#                                       add_dir_to_datasearch, remove_dir_from_datasearch)
-#from sans.gui_logic.models.batch_process_runner import BatchProcessRunner
-#from sans.gui_logic.models.create_state import create_states
-#from sans.gui_logic.models.diagnostics_page_model import create_state
-#from sans.gui_logic.models.state_gui_model import StateGuiModel
-#from sans.gui_logic.presenter.add_runs_presenter import OutputDirectoryObserver as SaveDirectoryObserver
-#from sans.user_file.user_file_reader import UserFileReader
-
-#from ui.sans_isis import SANSSaveOtherWindow
-#from ui.sans_isis.work_handler import WorkHandler
-
+from sans.common.enums import FitType
 from sans.ansto.run_tab_presenter import RunTabPresenter
 from ui.ansto.ansto_bilby_gui import BilbyBatchReductionGui
 
@@ -61,7 +45,12 @@ class BilbyPresenter(RunTabPresenter):
         """
         Provides a default setup of the GUI. This is important for the initial start up, when the view is being set.
         """
-        pass
+        super(BilbyPresenter, self)._default_gui_setup()
+
+        fit_types = [FitType.to_string(FitType.Linear),
+                     FitType.to_string(FitType.Logarithmic),
+                     FitType.to_string(FitType.Polynomial)]
+        self._view.transmission_fit = fit_types
 
     def on_show_corrections_selection(self, show):
         self._view.show_column_options(['corrections'], show)
@@ -105,7 +94,6 @@ class BilbyPresenter(RunTabPresenter):
 
     def _update_view_from_state_model(self):
 
-        self._set_on_view("gravity_correction")
         self._set_on_view("maximum_wavelength")
         self._set_on_view("minimum_wavelength")
         self._set_on_view("wavelength_step")
@@ -117,64 +105,29 @@ class BilbyPresenter(RunTabPresenter):
         self._set_on_view("qxy_interval")
         self._set_on_view("qxy_points")        
 
+        self._set_on_view("maximum_transmission_wavelength")
+        self._set_on_view("minimum_transmission_wavelength")
+        self._set_on_view("transmission_wavelength_step")
+        self._set_on_view("plot_transmission")
+        self._set_on_view("save_transmission")
+        self._set_on_view("transmission_fit")
+        self._set_on_view("polynomial_fit_order")
+
+        self._set_on_view("gravity_correction")
+        self._set_on_view("wide_angle_correction")
+        self._set_on_view("blocked_beam_correction")
         self._set_on_view("radius_cut")
         self._set_on_view("wave_cut")            
-        # TODO Add remaining terms
-
-    def _set_on_view_transmission_fit_sample_settings(self):
-        # Set transmission_sample_use_fit
-        fit_type = self._state_model.transmission_sample_fit_type
-        use_fit = fit_type is not FitType.NoFit
-        self._view.transmission_sample_use_fit = use_fit
-
-        # Set the polynomial order for sample
-        polynomial_order = self._state_model.transmission_sample_polynomial_order if fit_type is FitType.Polynomial else 2  # noqa
-        self._view.transmission_sample_polynomial_order = polynomial_order
-
-        # Set the fit type for the sample
-        fit_type = fit_type if fit_type is not FitType.NoFit else FitType.Linear
-        self._view.transmission_sample_fit_type = fit_type
-
-        # Set the wavelength
-        wavelength_min = self._state_model.transmission_sample_wavelength_min
-        wavelength_max = self._state_model.transmission_sample_wavelength_max
-        if wavelength_min and wavelength_max:
-            self._view.transmission_sample_use_wavelength = True
-            self._view.transmission_sample_wavelength_min = wavelength_min
-            self._view.transmission_sample_wavelength_max = wavelength_max
 
     def _set_on_view_transmission_fit(self):
-        # Steps for adding the transmission fit to the view
-        # 1. Check if individual settings exist. If so then set the view to separate, else set them to both
-        # 2. Apply the settings
-        separate_settings = self._state_model.has_transmission_fit_got_separate_settings_for_sample_and_can()
-        self._view.set_fit_selection(use_separate=separate_settings)
 
-        if separate_settings:
-            self._set_on_view_transmission_fit_sample_settings()
+        # Set transmission_sample_can_fit
+        fit_type = self._state_model.transmission_fit
+        self._view.transmission_fit = fit_type
 
-            # Set transmission_sample_can_fit
-            fit_type_can = self._state_model.transmission_can_fit_type()
-            use_can_fit = fit_type_can is FitType.NoFit
-            self._view.transmission_can_use_fit = use_can_fit
-
-            # Set the polynomial order for can
-            polynomial_order_can = self._state_model.transmission_can_polynomial_order if fit_type_can is FitType.Polynomial else 2  # noqa
-            self._view.transmission_can_polynomial_order = polynomial_order_can
-
-            # Set the fit type for the can
-            fit_type_can = fit_type_can if fit_type_can is not FitType.NoFit else FitType.Linear
-            self.transmission_can_fit_type = fit_type_can
-
-            # Set the wavelength
-            wavelength_min = self._state_model.transmission_can_wavelength_min
-            wavelength_max = self._state_model.transmission_can_wavelength_max
-            if wavelength_min and wavelength_max:
-                self._view.transmission_can_use_wavelength = True
-                self._view.transmission_can_wavelength_min = wavelength_min
-                self._view.transmission_can_wavelength_max = wavelength_max
-        else:
-            self._set_on_view_transmission_fit_sample_settings()
+        # Set the polynomial order for can
+        polynomial_order = self._state_model.polynomial_order if fit_type is FitType.Polynomial else 2  # noqa
+        self._view.polynomial_order = polynomial_order
 
     def _set_on_view(self, attribute_name):
         attribute = getattr(self._state_model, attribute_name)

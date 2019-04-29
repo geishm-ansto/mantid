@@ -30,7 +30,6 @@ from sans.gui_logic.gui_common import (get_reduction_mode_strings_for_gui, get_s
 from sans.gui_logic.models.batch_process_runner import BatchProcessRunner
 from sans.gui_logic.models.create_state import create_states
 from sans.gui_logic.models.diagnostics_page_model import create_state
-from sans.gui_logic.models.state_gui_model import StateGuiModel
 from sans.gui_logic.presenter.add_runs_presenter import OutputDirectoryObserver as SaveDirectoryObserver
 from sans.user_file.user_file_reader import UserFileReader
 
@@ -144,8 +143,8 @@ class RunTabPresenter(object):
         self.progress = 0
 
         # Models that are being used by the presenter
-        self._state_model = (self._models.StateModel)({})
-        self._table_model = (self._models.TableModel)(self._models.TableRowModel)
+        self._state_model = self._models.StateModel({})
+        self._table_model = self._models.TableModel(self._models.TableRowModel)
         self._table_model.subscribe_to_model_changes(self)
 
         # Presenter needs to have a handle on the view since it delegates it
@@ -171,7 +170,6 @@ class RunTabPresenter(object):
         Provides a default setup of the GUI. This is important for the initial start up, when the view is being set.
         """
         pass
-
 
     def _handle_output_directory_changed(self, new_directory):
         """
@@ -240,7 +238,7 @@ class RunTabPresenter(object):
                 self._view.reset_all_fields_to_default()
 
                 # 3. Read and parse the user file
-                user_file_reader = UserFileReader(user_file_path)
+                user_file_reader = self._models.UserFileReader(user_file_path)
                 user_file_items = user_file_reader.read_user_file()
             except (RuntimeError, ValueError) as e:
                 # It is in this exception block that loading fails if the file is invalid (e.g. a csv)
@@ -249,13 +247,13 @@ class RunTabPresenter(object):
             else:
                 try:
                     # 4. Populate the model
-                    self._state_model = StateGuiModel(user_file_items)
+                    self._state_model = self._models.StateModel(user_file_items)
                     # 5. Update the views.
                     self._update_view_from_state_model()
 
                     # 6. Warning if user file did not contain a recognised instrument
-                    if self._view.instrument == SANSInstrument.NoInstrument:
-                        raise RuntimeError("User file did not contain a SANS Instrument.")
+                    #if self._view.instrument == SANSInstrument.NoInstrument:
+                    #    raise RuntimeError("User file did not contain a SANS Instrument.")
 
                 except RuntimeError as instrument_e:
                     # This exception block runs if the user file does not contain an parsable instrument

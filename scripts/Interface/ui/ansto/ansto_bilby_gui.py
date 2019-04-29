@@ -16,7 +16,7 @@ from qtpy.QtWidgets import QListWidgetItem  # noqa
 from mantidqt import icons
 from mantidqt.utils.qt import load_ui
 
-from sans.common.enums import ReductionDimensionality
+from sans.common.enums import (FitType, ReductionDimensionality)
 from ui.ansto.run_tab_gui import RunTabGui
 
 from qtpy import PYQT4
@@ -142,74 +142,16 @@ class BilbyBatchReductionGui(RunTabGui):
 
     @property
     def plot_results(self):
-        return self.plot_results_checkbox.isChecked()
+        return self._ui.plot_results_checkbox.isChecked()
 
     @plot_results.setter
     def plot_results(self, value):
-        self.plot_results_checkbox.setChecked(value)
+        self._ui.plot_results_checkbox.setChecked(value)
 
     # ==================================================================================================================
-    # Settings Page properties : General Tab
+    # Settings Page properties : Reduction Tab
     # ==================================================================================================================
 
-    # Set the transmission fit selection
-    @property
-    def transmission_fit(self):
-        return self._ui.transmission_fit_combo.currentIndex()
-
-    @transmission_fit.setter
-    def transmission_fit(self, value):
-        self._ui.transmission_fit_combo.setCurrentIndex(value)
-
-    @property
-    def poylnominal_fit_order(self):
-        return self._ui.poylnominal_fit_order_spinner.value()
-
-    @poylnominal_fit_order.setter
-    def poylnominal_fit_order(self, value):
-        self._set_limited_spinner_value(self._ui.poylnominal_fit_order_spinner, value)
-
-    # Processing corrections
-    @property
-    def wide_angle_correction(self):
-        return self._ui.wide_angle_correction_checkbox.isChecked()
-
-    @wide_angle_correction.setter
-    def wide_angle_correction(self, value):
-        self._ui.wide_angle_correction_checkbox.setChecked(value)
-
-    @property
-    def gravity_correction(self):
-        return self._ui.gravity_correction_checkbox.isChecked()
-
-    @gravity_correction.setter
-    def gravity_correction(self, value):
-        self._ui.gravity_correction_checkbox.setChecked(value)
-
-    # Applied masks
-    @property
-    def transmission_mask_file(self):
-        return self.get_simple_line_edit_field(line_edit="transmission_mask_edit",
-                                               expected_type=str)
-
-    @transmission_mask_file.setter
-    def transmission_mask_files(self, value):
-        self.update_simple_line_edit_field(line_edit="transmission_mask_edit",
-                                           value=value)
-
-    @property
-    def sample_mask_file(self):
-        return self.get_simple_line_edit_field(line_edit="sample_mask_edit",
-                                               expected_type=str)
-
-    @transmission_mask_file.setter
-    def sample_mask_files(self, value):
-        self.update_simple_line_edit_field(line_edit="sample_mask_edit",
-                                           value=value)
-
-    # ==================================================================================================================
-    # Settings Page properties : Resolution Tab
-    # ==================================================================================================================
     @property
     def minimum_wavelength(self):
         return self.get_simple_line_edit_field(line_edit="wavelength_min_edit",
@@ -239,7 +181,9 @@ class BilbyBatchReductionGui(RunTabGui):
     def wavelength_step(self, value):
         self.update_simple_line_edit_field(line_edit="wavelength_step_edit",
                                            value=value)
+
     #---------------------------------------------------------------------------
+
     @property
     def minimum_q1d(self):
         return self.get_simple_line_edit_field(line_edit="q1d_min_edit",
@@ -269,7 +213,9 @@ class BilbyBatchReductionGui(RunTabGui):
     def q1d_step(self, value):
         self.update_simple_line_edit_field(line_edit="q1d_step_edit",
                                            value=value)
+
     #---------------------------------------------------------------------------
+
     @property
     def qxy_interval(self):
         return self.get_simple_line_edit_field(line_edit="qxy_interval_edit",
@@ -289,7 +235,51 @@ class BilbyBatchReductionGui(RunTabGui):
     def qxy_points(self, value):
         self.update_simple_line_edit_field(line_edit="qxy_data_points_edit",
                                            value=value)
+    
+    # ==================================================================================================================
+    # Settings Page properties : Transmission Tab
+    # ==================================================================================================================    
+
+    @property
+    def transmission_fit(self):
+        return self._ui.transmission_fit_combo.currentIndex()
+
+    @transmission_fit.setter
+    def transmission_fit(self, value):
+        self._ui.transmission_fit_combo.setCurrentIndex(value)
+
+    @property
+    def transmission_fit(self):
+        fit_type_as_string = self._ui.transmission_fit_combo.currentText().encode('utf-8')
+        return FitType.from_string(fit_type_as_string)
+
+    @transmission_fit.setter
+    def transmission_fit(self, value):
+        if value is None:
+            self._ui.transmission_fit_combo.setCurrentIndex(0)
+        else:
+            self.update_gui_combo_box(value=value, expected_type=FitType,
+                                      combo_box="transmission_fit_combo")
+
+    @property
+    def polynomial_fit_order(self):
+        return self._ui.poylnominal_fit_order_spinner.value()
+
+    @polynomial_fit_order.setter
+    def polynomial_fit_order(self, value):
+        self._set_polynomial_order(self._ui.polynomial_fit_order_spinner, value)
+
+    @staticmethod
+    def _set_polynomial_order(spin_box, value):
+        minimum = spin_box.minimum()
+        maximum = spin_box.maximum()
+        if value < minimum or value > maximum:
+            raise ValueError("The value for the polynomial order {} has "
+                             "to be in the range of {} and {}".format(value, minimum, maximum))
+        spin_box.setValue(value)
+
     #---------------------------------------------------------------------------
+  
     @property
     def minimum_transmission_wavelength(self):
         return self.get_simple_line_edit_field(line_edit="t_wavelength_min_edit",
@@ -319,7 +309,77 @@ class BilbyBatchReductionGui(RunTabGui):
     def transmission_wavelength_step(self, value):
         self.update_simple_line_edit_field(line_edit="t_wavelength_step_edit",
                                            value=value)
+
     #---------------------------------------------------------------------------
+
+    @property
+    def plot_transmission(self):
+        return self._ui.plot_transmission_checkbox.isChecked()
+
+    @plot_transmission.setter
+    def plot_transmission(self, value):
+        self._ui.plot_transmission_checkbox.setChecked(value)
+
+    @property
+    def save_transmission(self):
+        return self._ui.save_transmission_checkbox.isChecked()
+
+    @save_transmission.setter
+    def save_transmission(self, value):
+        self._ui.save_transmission_checkbox.setChecked(value)
+
+    # ==================================================================================================================
+    # Settings Page properties : Advanced Tab
+    # ==================================================================================================================
+
+    @property
+    def wide_angle_correction(self):
+        return self._ui.wide_angle_correction_checkbox.isChecked()
+
+    @wide_angle_correction.setter
+    def wide_angle_correction(self, value):
+        self._ui.wide_angle_correction_checkbox.setChecked(value)
+
+    @property
+    def gravity_correction(self):
+        return self._ui.gravity_correction_checkbox.isChecked()
+
+    @gravity_correction.setter
+    def gravity_correction(self, value):
+        self._ui.gravity_correction_checkbox.setChecked(value)
+
+    @property
+    def blocked_beam_correction(self):
+        return self._ui.blocked_beam_correction_checkbox.isChecked()
+
+    @blocked_beam_correction.setter
+    def blocked_beam_correction(self, value):
+        self._ui.blocked_beam_correction_checkbox.setChecked(value)
+
+    @property
+    def transmission_mask_file(self):
+        return self.get_simple_line_edit_field(line_edit="transmission_mask_edit",
+                                               expected_type=str)
+
+    @transmission_mask_file.setter
+    def transmission_mask_files(self, value):
+        self.update_simple_line_edit_field(line_edit="transmission_mask_edit",
+                                           value=value)
+
+    @property
+    def sample_mask_file(self):
+        return self.get_simple_line_edit_field(line_edit="sample_mask_edit",
+                                               expected_type=str)
+
+    @transmission_mask_file.setter
+    def sample_mask_files(self, value):
+        self.update_simple_line_edit_field(line_edit="sample_mask_edit",
+                                           value=value)
+
+    # ==================================================================================================================
+    # Settings Page properties : Resolution Tab
+    # ==================================================================================================================
+
     @property
     def radius_cut(self):
         return self.get_simple_line_edit_field(line_edit="radius_cut_edit",
@@ -329,7 +389,9 @@ class BilbyBatchReductionGui(RunTabGui):
     def radius_cut(self, value):
         self.update_simple_line_edit_field(line_edit="radius_cut_edit",
                                            value=value)
+
     #---------------------------------------------------------------------------
+
     @property
     def wave_cut(self):
         return self.get_simple_line_edit_field(line_edit="wave_cut_edit",
@@ -339,4 +401,4 @@ class BilbyBatchReductionGui(RunTabGui):
     def wave_cut(self, value):
         self.update_simple_line_edit_field(line_edit="wave_cut_edit",
                                            value=value)
-    #---------------------------------------------------------------------------
+

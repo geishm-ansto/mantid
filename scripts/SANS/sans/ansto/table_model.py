@@ -226,6 +226,7 @@ class TableModel(object):
         Read in the sample thickness for the given rows from the file and set it in the table.
         :param rows: list of table rows
         """
+        return # TODO implement actual behaviour
         if not rows:
             rows = range(len(self._table_entries))
         for row in rows:
@@ -236,7 +237,7 @@ class TableModel(object):
             success_callback = functools.partial(self.update_thickness_from_file_information, entry.id)
 
             error_callback = functools.partial(self.failure_handler, entry.id)
-            create_file_information(entry.sample_scatter, error_callback, success_callback,
+            create_file_information(entry.sample, error_callback, success_callback,
                                     self.work_handler, entry.id)
 
     def failure_handler(self, id, error):
@@ -285,7 +286,7 @@ class TableModel(object):
 
         entry = self._table_entries[row]
         file_information_factory = SANSFileInformationFactory()
-        file_information = file_information_factory.create_sans_file_information(entry.sample_scatter)
+        file_information = file_information_factory.create_sans_file_information(entry.sample)
         self.update_thickness_from_file_information(entry.id, file_information)
 
     def set_option(self, row, key, value):

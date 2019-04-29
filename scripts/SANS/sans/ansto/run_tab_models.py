@@ -14,10 +14,10 @@ from __future__ import (absolute_import, division, print_function)
 from sans.sans_batch import SANSBatchReduction
 from sans.gui_logic.models.state_gui_model import StateGuiModel
 from sans.ansto.table_model import TableModel
+from sans.ansto.bilby import bilby_state_model
 from sans.ansto.bilby import table_model as bilby_models
 from sans.user_file import user_file_reader
 from sans.ansto import file_readers
-#from sans.command_interface.batch_csv_file_parser import BatchCsvParser
 
 import imp
 
@@ -28,8 +28,8 @@ class RunTabModels(object):
 	
 	def __init__(self, tableModel=TableModel, 
 			  tableRowModel=bilby_models.RowModel, 
-			  stateModel=StateGuiModel, batchReduction=SANSBatchReduction,
-			  userFileReader=user_file_reader.UserFileReader, 
+			  stateModel=bilby_state_model.BilbyStateGuiModel, batchReduction=SANSBatchReduction,
+			  userFileReader=file_readers.UserFileReader, 
 			  batchFileReader=file_readers.BatchFileReader):
 		self._table_model = tableModel
 		self._table_row_model = tableRowModel

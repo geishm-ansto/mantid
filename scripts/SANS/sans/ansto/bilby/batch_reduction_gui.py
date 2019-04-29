@@ -11,7 +11,7 @@
 from __future__ import (absolute_import, division, print_function)
 
 from abc import ABCMeta, abstractmethod
-from sans.ansto.run_tab_gui import RunTabGui
+from ui.ansto.run_tab_gui import RunTabGui
 
 from qtpy import PYQT4
 if PYQT4:

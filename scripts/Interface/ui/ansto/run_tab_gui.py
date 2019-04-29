@@ -442,7 +442,7 @@ class RunTabGui(QMainWindow):
         # Lists: we set the combo box to the values in the list
         # expected_type: we set the expected type
         # str (in the case of "Variable" Q rebin): We set the combo box to the text if it is an option
-        gui_element = getattr(self, combo_box)
+        gui_element = getattr(self._ui, combo_box)
         if isinstance(value, list):
             gui_element.clear()
             for element in value:

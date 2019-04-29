@@ -40,7 +40,7 @@ from sans.gui_logic.presenter.diagnostic_presenter import DiagnosticsPagePresent
 from sans.gui_logic.presenter.masking_table_presenter import (MaskingTablePresenter)
 from sans.gui_logic.presenter.save_other_presenter import SaveOtherPresenter
 from sans.gui_logic.presenter.settings_diagnostic_presenter import (SettingsDiagnosticPresenter)
-from sans.sans_batch import SANSCentreFinder
+from sans.sans_batch import SANSBatchReduction, SANSCentreFinder
 from sans.user_file.user_file_reader import UserFileReader
 
 from ui.sans_isis import SANSSaveOtherWindow
@@ -195,7 +195,8 @@ class RunTabPresenter(object):
         self.set_view(view)
         self._processing = False
         self.work_handler = WorkHandler()
-        self.batch_process_runner = BatchProcessRunner(self.notify_progress,
+        self.batch_process_runner = BatchProcessRunner(SANSBatchReduction(),
+                                                       self.notify_progress,
                                                        self.on_processing_finished,
                                                        self.on_processing_error)
 
