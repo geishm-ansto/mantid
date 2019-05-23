@@ -24,18 +24,14 @@ from mantid.api import (FileFinder)
 from mantid.kernel import Logger, ConfigService
 
 from sans.common.constants import ALL_PERIODS
-from sans.common.enums import (BatchReductionEntry, RangeStepType, SampleShape, FitType, RowState, SANSInstrument)
+from sans.common.enums import (BatchReductionEntry, RangeStepType, SampleShape, FitType, RowState, SANSInstrument, OutputMode)
 from sans.gui_logic.gui_common import (get_reduction_mode_strings_for_gui, get_string_for_gui_from_instrument,
                                        add_dir_to_datasearch, remove_dir_from_datasearch)
-from sans.gui_logic.models.batch_process_runner import BatchProcessRunner
-from sans.gui_logic.models.create_state import create_states
-from sans.gui_logic.models.diagnostics_page_model import create_state
 from sans.gui_logic.presenter.add_runs_presenter import OutputDirectoryObserver as SaveDirectoryObserver
-from sans.user_file.user_file_reader import UserFileReader
-
-from ui.sans_isis import SANSSaveOtherWindow
+from sans.state.state_base import StateBase
 from ui.sans_isis.work_handler import WorkHandler
 
+from sans.ansto.batch_process_runner import BatchProcessRunner
 from ui.ansto.run_tab_gui import RunTabGui
 
 from qtpy import PYQT4
@@ -50,7 +46,7 @@ else:
     from mantidqt.plotting.functions import get_plot_fig
 
 row_state_to_colour_mapping = {RowState.Unprocessed: '#FFFFFF', RowState.Processed: '#d0f4d0',
-                               RowState.Error: '#accbff'}
+                               RowState.Error: '#ff7373', RowState.Scheduled: '#faebd7'}
 
 
 def log_times(func):
@@ -89,8 +85,14 @@ class RunTabPresenter(object):
         def on_process_all_clicked(self):
             self._presenter.on_process_all_clicked()
 
-        def on_load_clicked(self):
-            self._presenter.on_load_clicked()
+        def on_cancel_processing_clicked(self):
+            self._presenter.on_cancel_processing_clicked()
+
+        def on_save_directory_clicked(self):
+            self._presenter.on_save_directory_clicked()
+
+        def on_default_directory_clicked(self, use_default):
+            self._presenter.on_default_directory_clicked(use_default)
 
         def on_export_table_clicked(self):
             self._presenter.on_export_table_clicked()
@@ -133,6 +135,8 @@ class RunTabPresenter(object):
     def __init__(self, facility, view, models):
         super(RunTabPresenter, self).__init__()
         self._facility = facility
+        instrument = SANSInstrument.to_string(view.instrument)
+        ConfigService['default.instrument'] = instrument
         self._models = models
         # Logger
         self.sans_logger = Logger("SANS")
@@ -142,8 +146,8 @@ class RunTabPresenter(object):
         self.output_fig = None
         self.progress = 0
 
-        # Models that are being used by the presenter
-        self._state_model = self._models.StateModel({})
+        # Models that are used by the presenter
+        self._user_setting = {}
         self._table_model = self._models.TableModel(self._models.TableRowModel)
         self._table_model.subscribe_to_model_changes(self)
 
@@ -173,11 +177,13 @@ class RunTabPresenter(object):
 
     def _handle_output_directory_changed(self, new_directory):
         """
-        Update the gui to display the new save location for workspaces
+        Update the gui to display the new save location for workspaces 
+        if the use default directory option is checked
         :param new_directory: string. Current save directory for files
         :return:
         """
-        self._view.set_out_file_directory(new_directory)
+        if self._view.use_default_directory:
+            self._view.set_out_file_directory(new_directory)
 
     # ------------------------------------------------------------------------------------------------------------------
     # Table + Actions
@@ -195,11 +201,12 @@ class RunTabPresenter(object):
 
             # Default gui setup
             self._default_gui_setup()
-            self._view.disable_process_buttons()
+            self._view.enable_process_buttons(False)
 
             all_columns = self._table_model.column_labels()
             col_groups = self._table_model.column_options()
-            self._view.setup_layout(all_columns, col_groups)
+            hidden_groups = self.get_hidden_column_groups()
+            self._view.setup_layout(all_columns, col_groups, hidden_groups)
 
             self._view.set_out_file_directory(ConfigService.Instance().getString("defaultsave.directory"))
 
@@ -246,10 +253,9 @@ class RunTabPresenter(object):
                 self.display_errors(e, error_msg + " when reading file.", use_error_name=True)
             else:
                 try:
-                    # 4. Populate the model
-                    self._state_model = self._models.StateModel(user_file_items)
-                    # 5. Update the views.
-                    self._update_view_from_state_model()
+                    # 4. Update the views.
+                    self._user_setting = user_file_items
+                    self.update_view_from_user_setting()
 
                     # 6. Warning if user file did not contain a recognised instrument
                     #if self._view.instrument == SANSInstrument.NoInstrument:
@@ -272,6 +278,7 @@ class RunTabPresenter(object):
         """
         try:
             # 1. Get the batch file from the view
+            self._view.enable_process_buttons(False)
             batch_file_path = self._view.get_batch_file_path()
 
             if not batch_file_path:
@@ -304,6 +311,8 @@ class RunTabPresenter(object):
 
             self.sans_logger.error("Loading of the batch file failed. {}".format(str(e)))
             self.display_warning_box('Warning', 'Loading of the batch file failed', str(e))
+        else:
+            self._view.enable_process_buttons(True)
 
     def _add_row_to_table_model(self, row, index):
         """
@@ -314,7 +323,7 @@ class RunTabPresenter(object):
             _element = ""
             if _tag in _row:
                 _element = _row[_tag]
-            return _element
+            return _element if _element else ""
 
         # 1. Pull out the entries
         row_entry = [get_string_entry(tag, row) for tag in self._table_model.column_keys()]
@@ -327,22 +336,28 @@ class RunTabPresenter(object):
 
     def update_view_from_table_model(self):
         self._view.clear_table()
-        self._view.hide_column_options()
+        #self._view.hide_column_options()
         for row_index, row in enumerate(self._table_model._table_entries):
             row_entry = [str(x) for x in row.to_list()]
             self._view.add_row(row_entry)
             self._view.change_row_color(row_state_to_colour_mapping[row.row_state], row_index + 1)
             self._view.set_row_tooltip(row.tool_tip, row_index + 1)
-            show_groups = row.includes_options()
-            if show_groups:
-                self._view.show_column_options(show_groups)
+            #show_groups = row.includes_options()
+            #if show_groups:
+            #    self._view.show_column_options(show_groups)
         self._view.remove_rows([0])
         self._view.clear_selection()
+
+    def update_view_from_setting(self):
+        pass
 
     def on_data_changed(self, row, column, new_value, old_value):
         self._table_model.update_table_entry(row, column, new_value)
         self._view.change_row_color(row_state_to_colour_mapping[RowState.Unprocessed], row)
         self._view.set_row_tooltip('', row)
+
+    def get_hidden_column_groups(self):
+        return []
 
     # ----------------------------------------------------------------------------------------------
     # Processing
@@ -357,21 +372,6 @@ class RunTabPresenter(object):
         for row, error in errors.items():
             self.on_processing_error(row, error)
         return states
-
-    def _plot_graph(self):
-        """
-        Plot a graph if continuous output specified.
-        """
-        if self._view.plot_results:
-            if IN_MANTIDPLOT:
-                if not graph(self.output_graph):
-                    newGraph(self.output_graph)
-            elif not PYQT4:
-                ax_properties = {'yscale': 'log',
-                                 'xscale': 'log'}
-                fig, _ = get_plot_fig(ax_properties=ax_properties, window_title=self.output_graph)
-                fig.show()
-                self.output_fig = fig
 
     def _set_progress_bar_min_max(self, min, max):
         """
@@ -388,10 +388,10 @@ class RunTabPresenter(object):
         """
         try:
             for row in rows:
-                self._table_model.reset_row_state(row)
+                self._table_model.set_row_to_scheduled(row)
             self.update_view_from_table_model()
 
-            self._view.disable_buttons()
+            self._view.enable_buttons(False)
             self._processing = True
             self.sans_logger.information("Starting processing of batch table.")
 
@@ -399,19 +399,13 @@ class RunTabPresenter(object):
             if not states:
                 raise Exception("No states found")
 
-            self._plot_graph()
+            # scaled the progress bar to incude fractions
             self.progress = 0
             self._set_progress_bar_min_max(self.progress, len(states))
-            save_can = self._view.save_can
-
-            # MantidPlot and Workbench have different approaches to plotting
-            output_graph = self.output_graph if PYQT4 else self.output_fig
             self.batch_process_runner.process_states(states,
-                                                     self._view.use_optimizations,
-                                                     self._view.output_mode,
+                                                     False,
                                                      self._view.plot_results,
-                                                     output_graph,
-                                                     save_can)
+                                                     self._view.save_results)
 
         except Exception as e:
             self.on_processing_finished(None)
@@ -436,6 +430,14 @@ class RunTabPresenter(object):
         if selected_rows:
             self._process_rows(selected_rows)
 
+    def on_cancel_processing_clicked(self):
+        """
+        Cancel processing of remaining states
+        """
+        self.batch_process_runner.finish_up_processing()
+        self.sans_logger.information("Cancelled batch processing remaining states.")
+        self._view.enable_cancel_button(False)
+
     def on_processing_error(self, row, error_msg):
         """
         An error occurs while processing the row with index row, error_msg is displayed as a
@@ -446,34 +448,37 @@ class RunTabPresenter(object):
         self.update_view_from_table_model()
 
     def on_processing_finished(self, result):
-        self._view.enable_buttons()
+        self._view.enable_buttons(True)
         self._processing = False
 
-    def on_load_clicked(self):
-        try:
-            self._view.disable_buttons()
-            self._processing = True
-            self.sans_logger.information("Starting load of batch table.")
+    def on_save_directory_clicked(self):
+        # if a batch file is included use this as the default directory 
 
-            selected_rows = self._get_selected_rows()
-            selected_rows = self._table_model.get_non_empty_rows(selected_rows)
-            states, errors = self.get_states(row_index=selected_rows)
+        batch_path = self._view.get_batch_file_path()
+        default_directory = os.path.dirname(batch_path) if batch_path else None
+        dirname = self._view.display_save_directory_box("Select Directory", 
+                                                        default_directory)
+        if isinstance(dirname, tuple):
+            dirname = dirname[0]
+        if dirname:
+            self._view.set_out_file_directory(dirname)
 
-            for row, error in errors.items():
-                self.on_processing_error(row, error)
-
-            if not states:
-                self.on_processing_finished(None)
+    def on_default_directory_clicked(self, use_default):
+        # if True get the default save directory from the config service
+        # if False get the directory for the batch file if available and 
+        # and update the display
+        # if true then disable the save directory button
+        self._view.enable_save_directory_button(not use_default)
+        if use_default:
+            new_directory = ConfigService['defaultsave.directory']
+        else:
+            batch_file_path = self._view.get_batch_file_path()
+            if not batch_file_path:
+                # leave as is
                 return
+            new_directory = os.path.dirname(batch_file_path)
+        self._view.set_out_file_directory(new_directory)
 
-            self.progress = 0
-            setattr(self._view, 'progress_bar_value', self.progress)
-            setattr(self._view, 'progress_bar_maximum', len(states))
-            self.batch_process_runner.load_workspaces(states)
-        except Exception as e:
-            self._view.enable_buttons()
-            self.sans_logger.error("Process halted due to: {}".format(str(e)))
-            self.display_warning_box("Warning", "Process halted", str(e))
 
     def on_export_table_clicked(self):
         non_empty_rows = self.get_row_indices()
@@ -488,7 +493,7 @@ class RunTabPresenter(object):
             open_type = 'w'
 
         try:
-            self._view.disable_buttons()
+            self._view.enable_buttons(False)
 
             default_filename = self._table_model.batch_file
             filename = self.display_save_file_box("Save table as", default_filename, "*.csv")
@@ -504,9 +509,9 @@ class RunTabPresenter(object):
                     self._export_table(writer, non_empty_rows)
                     self.sans_logger.notice("Table exporting finished.")
 
-            self._view.enable_buttons()
+            self._view.enable_buttons(True)
         except Exception as e:
-            self._view.enable_buttons()
+            self._view.enable_buttons(True)
             self.sans_logger.error("Export halted due to : {}".format(str(e)))
             self.display_warning_box("Warning", "Export halted", str(e))
 
@@ -533,13 +538,12 @@ class RunTabPresenter(object):
         filename = self._view.display_save_file_box(title, default_path, file_filter)
         return filename
 
-    def notify_progress(self, row, out_shift_factors, out_scale_factors):
+    def notify_progress(self, row, results):
         self.increment_progress()
-        if out_scale_factors and out_shift_factors:
-            self._table_model.set_option(row, 'MergeScale', round(out_scale_factors[0], 3))
-            self._table_model.set_option(row, 'MergeShift', round(out_shift_factors[0], 3))
-
-        self._table_model.set_row_to_processed(row, '')
+        if results:
+            self._table_model.set_row_to_processed(row, '')
+        else:
+            self._table_model.reset_row_state(row)
 
     def increment_progress(self):
         self.progress = self.progress + 1
@@ -631,28 +635,6 @@ class RunTabPresenter(object):
                 row_indices_which_are_not_empty.append(row)
         return row_indices_which_are_not_empty
 
-    def on_mask_file_add(self):
-        """
-        We get the added mask file name and add it to the list of masks
-        """
-        new_mask_file = self._view.get_mask_file()
-        if not new_mask_file:
-            return
-        new_mask_file_full_path = FileFinder.getFullPath(new_mask_file)
-        if not new_mask_file_full_path:
-            return
-
-        # Add the new mask file to state model
-        mask_files = self._state_model.mask_files
-
-        mask_files.append(new_mask_file)
-        self._state_model.mask_files = mask_files
-
-        # Make sure that the sub-presenters are up to date with this change
-        self._masking_table_presenter.on_update_rows()
-        self._settings_diagnostic_tab_presenter.on_update_rows()
-        self._beam_centre_presenter.on_update_rows()
-
     def is_empty_row(self, row):
         """
         Checks if a row has no entries. These rows will be ignored.
@@ -660,36 +642,6 @@ class RunTabPresenter(object):
         :return: True if the row is empty.
         """
         return self._table_model.is_empty_row(row)
-
-    # def _validate_rows(self):
-    #     """
-    #     Validation of the rows. A minimal setup requires that ScatterSample is set.
-    #     """
-    #     # If SampleScatter is empty, then don't run the reduction.
-    #     # We allow empty rows for now, since we cannot remove them from Python.
-    #     number_of_rows = self._table_model.get_number_of_rows()
-    #     for row in range(number_of_rows):
-    #         if not self.is_empty_row(row):
-    #             sample_scatter = self._view.get_cell(row, 0)
-    #             if not sample_scatter:
-    #                 raise RuntimeError("Row {} has not SampleScatter specified. Please correct this.".format(row))
-
-    # ------------------------------------------------------------------------------------------------------------------
-    # Controls
-    # ------------------------------------------------------------------------------------------------------------------
-    def disable_controls(self):
-        """
-        Disable all input fields and buttons during the execution of the reduction.
-        """
-        # TODO: think about enabling and disable some controls during reduction
-        pass
-
-    def enable_controls(self):
-        """
-        Enable all input fields and buttons after the execution has completed.
-        """
-        # TODO: think about enabling and disable some controls during reduction
-        pass
 
     # ----------------------------------------------------------------------------------------------
     # Table Model and state population
@@ -711,18 +663,16 @@ class RunTabPresenter(object):
                           else all the state for all rows is returned.
         :return: a list of states.
         """
-        # 1. Update the state model
-        state_model_with_view_update = self._get_state_model_with_view_update()
-        # 2. Update the table model
+        # 1. Update the table model
         table_model = self._table_model
-        # 3. Go through each row and construct a state object
+        # 2. Go through each row and construct a state object
         states, errors = None, None
-        if table_model and state_model_with_view_update:
-            states, errors = create_states(state_model_with_view_update, table_model,
-                                           self._view.instrument,
-                                           self._facility,
-                                           row_index=row_index,
-                                           file_lookup=file_lookup)
+        if table_model:
+            states, errors = self.create_states(table_model,
+                                                self._view.instrument,
+                                                self._facility,
+                                                row_index=row_index,
+                                                file_lookup=file_lookup)
 
         if errors:
             self.sans_logger.warning("Errors in getting states...")
@@ -748,28 +698,54 @@ class RunTabPresenter(object):
                 return states[row_index]
         return None
 
-    def _update_view_from_state_model(self):
-        pass
+    def create_states(self, table_model, instrument, facility, row_index, file_lookup):
+        number_of_rows = table_model.get_number_of_rows()
+        rows = [x for x in row_index if x < number_of_rows]
+
+        states = {}
+        errors = {}
+
+        for row in rows:
+            if file_lookup:
+                table_model.wait_for_file_information(row)
+            state = self._create_row_state(row, table_model, facility, instrument, file_lookup)
+            if isinstance(state, StateBase):
+                states.update({row: state})
+            elif isinstance(state, str):
+                errors.update({row: state})
+        return states, errors
+
+    def _create_row_state(self, row, table_model, facility, instrument, file_lookup):
+        raise RuntimeError("_create_row_state is not implemented")
+
+    def update_view_from_user_setting(self):
+        self._set_on_view("output_folder")
 
     def _set_on_view(self, attribute_name):
-        attribute = getattr(self._state_model, attribute_name)
-        if attribute or isinstance(attribute,
-                                   bool):  # We need to be careful here. We don't want to set empty strings, or None, but we want to set boolean values. # noqa
+        try:
+            attribute = self._user_setting[attribute_name]
             setattr(self._view, attribute_name, attribute)
+        except KeyError:
+            pass
 
-    def _set_on_view_with_view(self, attribute_name, view):
-        attribute = getattr(self._state_model, attribute_name)
-        if attribute or isinstance(attribute,
-                                   bool):  # We need to be careful here. We don't want to set empty strings, or None, but we want to set boolean values. # noqa
-            setattr(view, attribute_name, attribute)
+    def _set_on_view_range(self, range_name, start_attr, step_attr, stop_attr):
+        try:
+            element = self._user_setting[range_name]
+            for (src, dst) in zip(['start', 'step', 'stop'],
+                                  [start_attr, step_attr, stop_attr]):
+                attribute = getattr(element, src) 
+                setattr(self._view, dst, attribute)
+        except KeyError:
+            pass
 
-    def _get_state_model_with_view_update(self):
-        pass
-
-    def _set_on_state_model(self, attribute_name, state_model):
-        attribute = getattr(self._view, attribute_name)
-        if attribute is not None and attribute != '':
-            setattr(state_model, attribute_name, attribute)
+    def _set_on_view_with_names(self, type_name, type_attribute, view_attribute):
+        try:
+            element = self._user_setting[type_name]
+            attribute = getattr(element, type_attribute)
+            if attribute or isinstance(attribute, bool):  
+                setattr(self._view, view_attribute, attribute)
+        except KeyError:
+            pass
 
     def get_cell_value(self, row, column):
         return self._view.get_cell(row=row, column=self.table_index[column], convert_to=str)
@@ -784,28 +760,6 @@ class RunTabPresenter(object):
         filewriter.writerow(self._table_model.column_keys())
         for row in rows:
                 table_row = self._table_model.get_table_entry(row).to_list()
-                #batch_file_row = self._create_batch_entry_from_row(table_row)
                 filewriter.writerow(table_row)
 
-    @staticmethod
-    def _create_batch_entry_from_row(row):
-        batch_file_keywords = ["sample_sans",
-                               "output_as",
-                               "sample_trans",
-                               "sample_direct_beam",
-                               "can_sans",
-                               "can_trans",
-                               "can_direct_beam",
-                               "user_file"]
-
-        loop_range = min(len(row), len(batch_file_keywords))
-        new_row = [''] * (2 * loop_range)
-
-        for i in range(loop_range):
-            key = batch_file_keywords[i]
-            value = row[i]
-            new_row[2*i] = key
-            new_row[2*i + 1] = value
-
-        return new_row
 

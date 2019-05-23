@@ -16,9 +16,10 @@ import functools
 import os
 import re
 
+from mantid.api import FileFinder
 from sans.common.enums import RowState
-from sans.common.file_information import SANSFileInformationFactory
-from sans.gui_logic.presenter.create_file_information import create_file_information
+from sans.common.file_information import find_sans_file
+from sans.gui_logic.presenter.work_handler_listener_wrapper import GenericWorkHandlerListener
 from ui.sans_isis.work_handler import WorkHandler
 
 
@@ -26,11 +27,11 @@ class RowModel(object):
 
     @staticmethod
     def column_labels():
-        return ["Index","User File"]
+        return ["Index"]
 
     @staticmethod
     def column_keys():
-        return ["index", "user_file"]
+        return ["index"]
 
     @staticmethod
     def column_options():
@@ -38,15 +39,13 @@ class RowModel(object):
 
     @staticmethod
     def create_empty_row():
-        row = [''] * 2
+        row = [''] * 1
         return RowModel(*row)
     
     def __init__(self, *argv):
         super(RowModel, self).__init__()
         self.id = None
         self.index = None
-        self.user_file = None
-        self.output_name = None
         for tag, value in zip(self.column_keys(), argv):
             setattr(self, tag, value)
 
@@ -76,7 +75,7 @@ class RowModel(object):
         :return: a list of data in the order as would typically appear
         in a batch file
         """
-        return_list = [self.user_file]
+        return_list = []
         return_list = list(map(str, return_list))
         return_list = list(map(str.strip, return_list))
         return return_list
@@ -100,7 +99,6 @@ class TableModel(object):
     def __init__(self, rowModelClass):
         super(TableModel, self).__init__()
         self._RowModel = rowModelClass
-        self._user_file = ""
         self._batch_file = ""
         self._table_entries = []
         self.work_handler = WorkHandler()
@@ -113,20 +111,6 @@ class TableModel(object):
             return
         if not os.path.exists(file_name):
             raise ValueError("The file {} does not seem to exist.".format(file_name))
-
-    @property
-    def user_file(self):
-        return self._user_file
-
-    @user_file.setter
-    def user_file(self, value):
-        self._user_file = value
-
-    def get_row_user_file(self, row_index):
-        if row_index < len(self._table_entries):
-            return self._table_entries[row_index].user_file
-        else:
-            raise IndexError("The row {} does not exist.".format(row_index))
 
     @property
     def batch_file(self):
@@ -160,14 +144,14 @@ class TableModel(object):
         self._table_entries.insert(row, table_index_model)
         if row >= self.get_number_of_rows():
             row = self.get_number_of_rows() - 1
-        self.get_thickness_for_rows([row])
+        self.get_fileinfo_for_rows([row])
         self.notify_subscribers()
 
     def append_table_entry(self, table_index_model):
         table_index_model.id = self._id_count
         self._id_count += 1
         self._table_entries.append(table_index_model)
-        self.get_thickness_for_rows([self.get_number_of_rows() - 1])
+        self.get_fileinfo_for_rows([self.get_number_of_rows() - 1])
         self.notify_subscribers()
 
     def remove_table_entries(self, rows):
@@ -197,7 +181,7 @@ class TableModel(object):
         self._table_entries[row].update_attribute('row_state', RowState.Unprocessed)
         self._table_entries[row].update_attribute('tool_tip', '')
         if column == 0:
-            self.get_thickness_for_rows([row])
+            self.get_fileinfo_for_rows([row])
         self.notify_subscribers()
 
     def is_empty_row(self, row):
@@ -216,17 +200,21 @@ class TableModel(object):
         self._table_entries[row].update_attribute('tool_tip', '')
         self.notify_subscribers()
 
+    def set_row_to_scheduled(self, row):
+        self._table_entries[row].update_attribute('row_state', RowState.Scheduled)
+        self._table_entries[row].update_attribute('tool_tip', 'Scheduled for processing')
+        self.notify_subscribers()
+
     def set_row_to_error(self, row, tool_tip):
         self._table_entries[row].update_attribute('row_state', RowState.Error)
         self._table_entries[row].update_attribute('tool_tip', tool_tip)
         self.notify_subscribers()
 
-    def get_thickness_for_rows(self, rows=None):
+    def get_fileinfo_for_rows(self, rows=None):
         """
-        Read in the sample thickness for the given rows from the file and set it in the table.
+        Read in the file info parameters for the given rows from the file and set it in the table.
         :param rows: list of table rows
         """
-        return # TODO implement actual behaviour
         if not rows:
             rows = range(len(self._table_entries))
         for row in rows:
@@ -234,11 +222,7 @@ class TableModel(object):
             if entry.is_empty():
                 continue
             entry.file_finding = True
-            success_callback = functools.partial(self.update_thickness_from_file_information, entry.id)
-
-            error_callback = functools.partial(self.failure_handler, entry.id)
-            create_file_information(entry.sample, error_callback, success_callback,
-                                    self.work_handler, entry.id)
+            self.create_file_information(entry)
 
     def failure_handler(self, id, error):
         row = self.get_row_from_id(id)
@@ -246,13 +230,26 @@ class TableModel(object):
         self._table_entries[row].file_finding = False
         self.set_row_to_error(row, str(error[1]))
 
-    def update_thickness_from_file_information(self, id, file_information):
+    def update_row_from_file_information(self, id, file_information):
         row = self.get_row_from_id(id)
         if file_information:
-            rounded_file_thickness = round(file_information.get_thickness(), 2)
             self._table_entries[row].update_attribute('file_information', file_information)
             self._table_entries[row].file_finding = False
             self.reset_row_state(row)
+
+    def create_file_information(self, entry):
+        #sample_path = find_sans_file(sample)
+        success_callback = functools.partial(self.update_row_from_file_information, entry.id)
+        error_callback = functools.partial(self.failure_handler, entry.id)
+
+        listener = GenericWorkHandlerListener(error_callback, success_callback)
+        self.work_handler.process(listener,
+                                self.create_ansto_file_information,
+                                entry.id,
+                                entry)
+
+    def create_ansto_file_information(self, entry):
+        raise RuntimeError("No default ANSTO file information")
 
     def subscribe_to_model_changes(self, subscriber):
         self._subscriber_list.append(subscriber)
@@ -285,9 +282,9 @@ class TableModel(object):
             row = self.get_number_of_rows() - 1
 
         entry = self._table_entries[row]
-        file_information_factory = SANSFileInformationFactory()
-        file_information = file_information_factory.create_sans_file_information(entry.sample)
-        self.update_thickness_from_file_information(entry.id, file_information)
+        sample_path = find_sans_file(entry.sample)
+        file_information = self.create_ansto_file_information(sample_path)
+        self.update_row_from_file_information(entry.id, file_information)
 
     def set_option(self, row, key, value):
         self._table_entries[row].options_column_model.set_option(key, value)

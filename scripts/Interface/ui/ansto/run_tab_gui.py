@@ -70,7 +70,15 @@ class RunTabGui(QMainWindow):
             pass
 
         @abstractmethod
-        def on_load_clicked(self):
+        def on_cancel_processing_clicked(self):
+            pass
+
+        @abstractmethod
+        def on_save_directory_clicked(self):
+            pass
+
+        @abstractmethod
+        def on_default_directory_clicked(self, show):
             pass
 
         @abstractmethod
@@ -171,7 +179,7 @@ class RunTabGui(QMainWindow):
     def set_current_page(self, index):
         self._ui.main_stacked_widget.setCurrentIndex(index)
 
-    def setup_layout(self, all_columns, column_options):
+    def setup_layout(self, all_columns, column_options, hidden_groups):
         """
         Do further setup that could not be done in the designer.
         So far only two menus have been added, we need to add the processing table manually.
@@ -188,17 +196,19 @@ class RunTabGui(QMainWindow):
         # --------------------------------------------------------------------------------------------------------------
 		# Initial setup hides all the columns listed in the groups
         self._column_options = column_options
-        hidden_groups = list(column_options.keys())
         self._create_data_table(all_columns, hidden_groups)
 
         self._setup_main_tab()
+        self.reset_all_fields_to_default()
 
         # Add the ui connections
         self._ui.process_selected_button.clicked.connect(self._process_selected_clicked)
         self._ui.process_all_button.clicked.connect(self._process_all_clicked)
-        self._ui.load_button.clicked.connect(self._load_clicked)
+        self._ui.cancel_processing_button.clicked.connect(self._cancel_processing_clicked)
+        self._ui.save_directory_button.clicked.connect(self._save_directory_clicked)
         self._ui.export_table_button.clicked.connect(self._export_table_clicked)
         self._ui.help_button.clicked.connect(self._on_help_button_clicked)
+        self._ui.default_directory_checkbox.stateChanged.connect(self._default_directory_clicked)
 
         return True
 
@@ -290,8 +300,14 @@ class RunTabGui(QMainWindow):
         """
         self._call_settings_listeners(lambda listener: listener.on_process_all_clicked())
 
-    def _load_clicked(self):
-        self._call_settings_listeners(lambda listener: listener.on_load_clicked())
+    def _cancel_processing_clicked(self):
+        """
+        Cancel processing of remaining states clicked
+        """
+        self._call_settings_listeners(lambda listener: listener.on_cancel_processing_clicked())
+
+    def _save_directory_clicked(self):
+        self._call_settings_listeners(lambda listener: listener.on_save_directory_clicked())
 
     def _export_table_clicked(self):
         self._call_settings_listeners(lambda listener: listener.on_export_table_clicked())
@@ -340,7 +356,7 @@ class RunTabGui(QMainWindow):
 
     def _on_help_button_clicked(self):
         if PYQT4:
-            proxies.showCustomInterfaceHelp('ISIS SANS v2')
+            proxies.showCustomInterfaceHelp('ANSTO Bilby')
 
     def _on_user_file_load(self):
         """
@@ -377,34 +393,26 @@ class RunTabGui(QMainWindow):
                   self.get_batch_file_path)
         self._call_settings_listeners(lambda listener: listener.on_batch_file_load())
 
-    def disable_buttons(self):
+    def enable_buttons(self, enabled):
+        self._ui.process_selected_button.setEnabled(enabled)
+        self._ui.process_all_button.setEnabled(enabled)
+        self._ui.cancel_processing_button.setEnabled(not enabled)
+        self._ui.user_file_button.setEnabled(enabled)
+        self._ui.batch_file_button.setEnabled(enabled)
+        self._ui.save_directory_button.setEnabled(enabled)
+        self._ui.export_table_button.setEnabled(enabled)
+        self._ui.default_directory_checkbox.setEnabled(enabled)
 
-        self._ui.process_selected_button.setEnabled(False)
-        self._ui.process_all_button.setEnabled(False)
-        self._ui.user_file_button.setEnabled(False)
-        self._ui.batch_file_button.setEnabled(False)
-        #self.manage_directories_button.setEnabled(False)
-        self._ui.load_button.setEnabled(False)
-        self._ui.export_table_button.setEnabled(False)
+    def enable_process_buttons(self, enabled):
+        self._ui.process_selected_button.setEnabled(enabled)
+        self._ui.process_all_button.setEnabled(enabled)
+        self._ui.cancel_processing_button.setEnabled(not enabled)
 
-    def enable_buttons(self):
-        self._ui.process_selected_button.setEnabled(True)
-        self._ui.process_all_button.setEnabled(True)
-        self._ui.user_file_button.setEnabled(True)
-        self._ui.batch_file_button.setEnabled(True)
-        #self.manage_directories_button.setEnabled(True)
-        self._ui.load_button.setEnabled(True)
-        self._ui.export_table_button.setEnabled(True)
+    def enable_cancel_button(self, enabled):
+        self._ui.cancel_processing_button.setEnabled(enabled)
 
-    def disable_process_buttons(self):
-        self._ui.process_selected_button.setEnabled(False)
-        self._ui.process_all_button.setEnabled(False)
-        self._ui.load_button.setEnabled(False)
-
-    def enable_process_buttons(self):
-        self._ui.process_selected_button.setEnabled(True)
-        self._ui.process_all_button.setEnabled(True)
-        self._ui.load_button.setEnabled(True)
+    def enable_save_directory_button(self, enabled):
+        self._ui.save_directory_button.setEnabled(enabled)
 
     def display_message_box(self, title, message, details):
         msg = QMessageBox()
@@ -433,6 +441,15 @@ class RunTabGui(QMainWindow):
 
     def set_out_file_directory(self, out_file_directory):
         self._ui.output_directory_location.setText("{}".format(out_file_directory))
+
+    def _default_directory_clicked(self):
+        self._call_settings_listeners(
+            lambda listener: listener.on_default_directory_clicked(self.use_default_directory))
+
+    def display_save_directory_box(self, title, default_path):
+        directory = QFileDialog.getExistingDirectory(self, title, default_path, 
+                                                     QFileDialog.ShowDirsOnly)
+        return directory
 
     # ------------------------------------------------------------------------------------------------------------------
     # Elements which can be set and read by the model
@@ -495,19 +512,13 @@ class RunTabGui(QMainWindow):
                              "to be in the range of {} and {}".format(value, minimum, maximum))
         spin_box.setValue(value)
 
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-    # START ACCESSORS
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+    # ==================================================================================================================
+    # START PROPERTIES
+    # ==================================================================================================================
 
-    # ==================================================================================================================
-    # ==================================================================================================================
+    # -------------------------------------------------------
     # FRONT TAB
-    # ==================================================================================================================
-    # ==================================================================================================================
-
-
+    # -------------------------------------------------------
     @property
     def progress_bar_minimum(self):
         return self._ui.batch_progress_bar.minimum()
@@ -532,16 +543,36 @@ class RunTabGui(QMainWindow):
     def progress_bar_value(self, progress):
         self._ui.batch_progress_bar.setValue(progress)
 
+    @property
+    def output_folder(self):
+        return self.get_simple_line_edit_field(line_edit="output_folder_edit",
+                                               expected_type=str)
+
+    @output_folder.setter
+    def output_folder(self, value):
+        self.update_simple_line_edit_field(line_edit="output_folder_edit",
+                                           value=value)
+
+    @property
+    def save_directory(self):
+        return str(self._ui.output_directory_location.text())
+
     # -----------------------------------------------------------------
     # Global options
     # -----------------------------------------------------------------
+    
+    @property
+    def use_default_directory(self):
+        return self._ui.default_directory_checkbox.isChecked()
+
+    @use_default_directory.setter
+    def use_default_directory(self, value):
+        self._ui.default_directory_checkbox.setChecked(value)
 
 
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-    # END ACCESSORS
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-    # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+    # ==================================================================================================================
+    # END PROPERTIES
+    # ==================================================================================================================
 
     def _attach_validators(self):
         # Setup the list of validators
@@ -559,7 +590,7 @@ class RunTabGui(QMainWindow):
         # ------------------------------
         # General tab
         # ------------------------------
-        pass
+        self.use_default_directory = True
 
     # ----------------------------------------------------------------------------------------------
     # Table interaction

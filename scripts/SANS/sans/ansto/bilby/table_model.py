@@ -16,31 +16,53 @@ import functools
 import os
 import re
 
+from sans.common.file_information import find_sans_file
 from sans.ansto import table_model as core
+from sans.ansto.bilby.file_information import BILBYFileInformation
+
+class TableModel(core.TableModel):
+
+    def create_ansto_file_information(self, entry):
+        sample_path = find_sans_file(entry.sample)
+        trans_path = find_sans_file(entry.t_sample)
+        file_info = BILBYFileInformation(sample_path, trans_path)
+        return file_info
+
+    def update_row_from_file_information(self, id, file_information):
+        row = self.get_row_from_id(id)
+        if file_information:
+            # no specific values 
+            #rounded_file_thickness = round(file_information.get_thickness(), 2)
+            #self._table_entries[row].update_attribute('thickness', rounded_file_thickness)
+            pass
+        super(TableModel, self).update_row_from_file_information(id, file_information)
 
 class RowModel(core.RowModel):
 
     @staticmethod
     def column_labels():
-        return ["Sample","T Empty Beam","Transmission Sample","Thickness", "Blocked Beam", 
-                "Suffix","Description","Start Time", "End Time","Gravity Fix","Wide Angle Fix",
-                "Sample Mask", "Transmission Mask","Radius Cut","Wave Cut","User File","Output"]
+        return ["Index","Sample","T Empty Beam","Transmission Sample","Thickness", "Blocked Beam", 
+                "Start Time", "End Time","Sample Mask", "Transmission Mask",
+                "Suffix","Description","Gravity Fix","Wide Angle Fix", "Radius Cut","Wave Cut"]
 
     @staticmethod
     def column_keys():
-        return ["sample", "t_empty_beam", "t_sample", "thickness", "blocked_beam", 
-                "suffix", "description", "start_time", "end_time", "gravity_correction","wide_angle_correction", 
-                "sample_mask", "transmission_mask", "radius_cut", "wave_cut", "user_file", "output_name"]
+        return ["index", "sample", "t_empty_beam", "t_sample", "thickness", "blocked_beam", 
+                "start_time", "end_time", "sample_mask", "transmission_mask", 
+                "suffix", "description", "gravity_correction","wide_angle_correction", 
+                "radius_cut", "wave_cut"]
 
     @staticmethod
     def column_options():
-        return {'corrections': [9,10],
-                'radius_wave': [13,14],
-                'masks': [11,12]}
+        return {'index': [0],
+                'time_limits': [6,7],
+                'corrections': [12,13],
+                'radius_wave': [14,15],
+                'masks': [8,9]}
     
     @staticmethod
     def create_empty_row():
-        row = [''] * 17
+        row = [''] * 16
         return RowModel(*row)
 
     def __init__(self, *argv):

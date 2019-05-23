@@ -5,7 +5,7 @@
 #     & Institut Laue - Langevin
 # SPDX - License - Identifier: GPL - 3.0 +
 from qtpy.QtCore import Slot, QThreadPool, Signal, QObject
-#from sans.sans_batch import SANSBatchReduction
+from sans.sans_batch import SANSBatchReduction
 from sans.algorithm_detail.batch_execution import load_workspaces_from_states
 from ui.sans_isis.worker import Worker
 from sans.common.enums import ISISReductionMode
@@ -15,12 +15,12 @@ class BatchProcessRunner(QObject):
     row_processed_signal = Signal(int, list, list)
     row_failed_signal = Signal(int, str)
 
-    def __init__(self, batch_reduction, notify_progress, notify_done, notify_error):
+    def __init__(self, notify_progress, notify_done, notify_error):
         super(BatchProcessRunner, self).__init__()
         self.row_processed_signal.connect(notify_progress)
         self.row_failed_signal.connect(notify_error)
         self.notify_done = notify_done
-        self.batch_processor = batch_reduction
+        self.batch_processor = SANSBatchReduction()
         self._worker = None
 
     @Slot()

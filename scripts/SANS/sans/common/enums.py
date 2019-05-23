@@ -97,7 +97,7 @@ def string_convertible(cls):
 #  Instrument and facility types
 # --------------------------------
 @string_convertible
-@serializable_enum("LOQ", "LARMOR", "SANS2D", "ZOOM", "NoInstrument")
+@serializable_enum("LOQ", "LARMOR", "SANS2D", "ZOOM", "BILBY", "NoInstrument")
 class SANSInstrument(object):
     pass
 
@@ -395,7 +395,7 @@ class IntegralEnum(object):
 
 
 @string_convertible
-@serializable_enum("Unprocessed", "Processed", "Error")
+@serializable_enum("Unprocessed", "Processed", "Error", "Scheduled")
 class RowState(object):
     """
     Defines the entries of a batch reduction file.

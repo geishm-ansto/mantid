@@ -5,7 +5,7 @@
 #     & Institut Laue - Langevin
 # SPDX - License - Identifier: GPL - 3.0 +
 """ 
-Simple file readers for loading Batch and batch file data.
+Simple file readers for loading user and batch file data.
 """
 
 from __future__ import (absolute_import, division, print_function)
@@ -44,7 +44,25 @@ def parse_fit_type(value):
         return FitType.Polynomial
 
 def parse_integer(value):
-    return int(value)
+    return int(value) if value else None
+
+def parse_float(value):
+    return float(value) if value else None
+
+def parse_scale_float(scale, value):
+    return scale * float(value) if value else None
+
+boolean_true = ('t', 'true', '1', 'y', 'yes')
+boolean_false = ('f', 'false', '0', 'n', 'no')
+def parse_boolean(value):
+    if value:
+        svalue = value.lower().strip()
+        if svalue in boolean_true or svalue in boolean_false:
+            return svalue in boolean_true
+        else:
+            raise RuntimeError('Invalid boolean argument: {}'.format(value))
+    else:
+        return False
 
 class UserFileReader(object):
     """
@@ -56,8 +74,13 @@ class UserFileReader(object):
         0, 12.3, ...
 
     The loader creates an index ordered list of dictionaries using the header information as 
-    the keys. 
+    the keys.
+    If the loader follows the csv format then it is only necessary to update the function
+    and header maps.
     """
+    function_maps = {}
+    header_maps = {}
+
     def __init__(self, file_path):
         super(UserFileReader, self).__init__()
         self._file_path = find_full_file_path(file_path)
@@ -90,7 +113,7 @@ class UserFileReader(object):
                 try:
                     #index = int(row[0])
                     for tag, value in zip(header, row[1:]):
-                        parsed_values[tag] = [self.parse_value(tag, value)]
+                        parsed_values[tag] = self.parse_value(tag, value)
 
                 except ValueError:
                     raise RuntimeError("Invalid value in user file.")
@@ -98,40 +121,34 @@ class UserFileReader(object):
 
         return parsed_values
 
-    @staticmethod
-    def parse_value(tag, value):
-        function_maps = {'wavelength_bins': parse_simple_range,
-                         'q1d_bins': parse_simple_range,
-                         'transmission_bins': parse_simple_range,
-                         'transmission_fit': parse_fit_type,
-                         'polynomial_order': parse_integer,
-                         }
+    def parse_value(self, tag, value):
+
         try:
-            return function_maps[tag](value)
+            return self.function_maps[tag](value)
         except KeyError:
             return value
 
-
-    @staticmethod
-    def map_header(tags):
-        # maps similar labels to the equivalent Bilby row model column keys
+    def map_header(self, tags):
         # the headings are case insenstive
-        bilby_map = {'binning_wavelength_ini': 'wavelength_bins',
-                     'binning_q': 'q1d_bins',
-                     'binning_wavelength_transmission': 'transmission_bins',
-                     'radiuscut': 'radius_cut',
-                     'wavecut': 'wave_cut',
-                     'polynomialorder': 'polynomial_order', 
-                     '2d_number_data_points': 'qxy_points',
-                    }
         ntags = []
         for tag in tags:
             try:
                 ntag = tag.lower()
-                ntags.append(bilby_map[ntag])
+                ntags.append(self.header_maps[ntag])
             except KeyError:
                 ntags.append(ntag)
         return ntags
+
+def parse_run_number(tag, value):
+    # any value of the form 'BBY00[nnnn]' is mapped to 'nnnn'
+    pattern = '^{}0*(.+)$'.format(tag)
+    s = re.search(pattern, value.lower())
+    if s:
+        return s.group(1)
+    else:
+        return value
+
+bby_run_number = functools.partial(parse_run_number, 'bby')
 
 class BatchFileReader(object):
     """
@@ -142,7 +159,12 @@ class BatchFileReader(object):
 
     The loader creates an index ordered list of dictionaries using the header information as 
     the keys. 
+    If the loader follows the csv format then it is only necessary to update the function
+    and header maps.
     """
+    function_maps = {}
+    header_maps = {}
+
     def __init__(self, file_path):
         super(BatchFileReader, self).__init__()
         self._file_path = find_full_file_path(file_path)
@@ -167,14 +189,17 @@ class BatchFileReader(object):
                 if header is None:
                     if row[0].lower().strip() != 'index':
                         raise RuntimeError("Batch file did not contain an index column as the first entry in the header.")
-                    header = self.map_header(row[1:])
+                    header = self.map_header(row)
                     continue
                 # assumes comment if the first entry is empty 
                 if not row[0] or row[0].lower().strip() == 'end':
                     continue
                 try:
+                    parsed_values = {}
+                    for tag, value in zip(header, row):
+                        parsed_values[tag] = self.parse_value(tag, value)
                     index = int(row[0])
-                    parsed_rows[index] = dict(zip(header, self.map_to_run(row[1:])))
+                    parsed_rows[index] = parsed_values
                 except ValueError:
                     raise RuntimeError("Invalid index value in Batch file.")
         csv_file.close()
@@ -183,35 +208,20 @@ class BatchFileReader(object):
         skeys = sorted(parsed_rows.keys())
         return [parsed_rows[k] for k in skeys]
 
-    @staticmethod
-    def map_to_run(values):
-        # any value of the form 'BBY00[nnnn]' is mapped to 'nnnn'
-        nvalues = []
-        for value in values:
-            s = re.search('^bby0*(.+)$', value.lower())
-            if s:
-                nvalues.append(s.group(1))
-            else:
-                nvalues.append(value)
-        return nvalues
+    def parse_value(self, tag, value):
 
-    @staticmethod
-    def map_header(tags):
-        # maps similar labels to the equivalent Bilby row model column keys
+        try:
+            return self.function_maps[tag](value)
+        except KeyError:
+            return value
+
+    def map_header(self, tags):
         # the headings are case insenstive
-        bilby_map = {'t_emptybeam': 't_empty_beam',
-                     'thickness [cm]': 'thickness',
-                     'mask_transmission': 'transmission_mask',
-                     'blockedbeam': 'blocked_beam',
-                     'additional_description': 'description',
-                     'mask': 'sample_mask',
-                     'starttime': 'start_time',
-                     'endtime': 'end_time'}
         ntags = []
         for tag in tags:
             try:
                 ntag = tag.lower()
-                ntags.append(bilby_map[ntag])
+                ntags.append(self.header_maps[ntag])
             except KeyError:
                 ntags.append(ntag)
         return ntags

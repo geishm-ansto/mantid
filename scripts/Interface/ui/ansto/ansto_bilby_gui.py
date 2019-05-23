@@ -16,7 +16,7 @@ from qtpy.QtWidgets import QListWidgetItem  # noqa
 from mantidqt import icons
 from mantidqt.utils.qt import load_ui
 
-from sans.common.enums import (FitType, ReductionDimensionality)
+from sans.common.enums import (FitType, ReductionDimensionality, SANSInstrument)
 from ui.ansto.run_tab_gui import RunTabGui
 
 from qtpy import PYQT4
@@ -42,6 +42,13 @@ class BilbyBatchReductionGui(RunTabGui):
         """
         Defines the additional elements which a presenter can listen to in this View
         """
+        @abstractmethod
+        def on_show_index_selection(self, show):
+            pass
+
+        @abstractmethod
+        def on_show_times_selection(self, show):
+            pass
 
         @abstractmethod
         def on_show_corrections_selection(self, show):
@@ -57,22 +64,16 @@ class BilbyBatchReductionGui(RunTabGui):
 
     def __init__(self, ui_form, parent=None):
         super(BilbyBatchReductionGui, self).__init__(ui_form, parent=parent)
+        self.instrument = SANSInstrument.BILBY
 
     def _setup_connections(self):
         super(BilbyBatchReductionGui, self)._setup_connections()
 
-    def _setup_page_tabs(self, list_widget):
-
-        super(BilbyBatchReductionGui, self)._setup_page_tabs(list_widget)
-        settings_icon = icons.get_icon("fa.cog")
-        _ = QListWidgetItem(settings_icon, "Settings", list_widget)  # noqa
-
-    def setup_layout(self, all_columns, column_groups):
-        super(BilbyBatchReductionGui, self).setup_layout(all_columns, column_groups)
-
         # --------------------------------------------------------------------------------------------------------------
         # Runs Page
         # --------------------------------------------------------------------------------------------------------------
+        self._ui.show_index_checkbox.stateChanged.connect(self._on_show_index_selection)
+        self._ui.show_time_limits_checkbox.stateChanged.connect(self._on_show_times_selection)
         self._ui.show_corrections_checkbox.stateChanged.connect(self._on_show_corrections_selection)
         self._ui.show_masks_checkbox.stateChanged.connect(self._on_show_masks_selection)
         self._ui.show_radius_wave_checkbox.stateChanged.connect(self._on_show_radius_wave_selection)
@@ -84,8 +85,57 @@ class BilbyBatchReductionGui(RunTabGui):
         self._ui.transmission_fit_combo.currentIndexChanged.connect(self._on_transmission_fit_selection_changed)
         self._on_transmission_fit_selection_changed()
 
+    def _setup_page_tabs(self, list_widget):
+
+        super(BilbyBatchReductionGui, self)._setup_page_tabs(list_widget)
+        settings_icon = icons.get_icon("fa.cog")
+        _ = QListWidgetItem(settings_icon, "Settings", list_widget)  # noqa
+
+    def setup_layout(self, all_columns, column_groups, hidden_groups):
+        super(BilbyBatchReductionGui, self).setup_layout(all_columns, column_groups, hidden_groups)
+        # nothing specific
+
+    def reset_all_fields_to_default(self):
+        super(BilbyBatchReductionGui, self).reset_all_fields_to_default()
+        self.wave_cut = ""
+        self.radius_cut = ""
+        self.sample_mask_file = ""
+        self.transmission_mask_file = ""
+        self.blocked_beam_correction = True
+        self.gravity_correction = True
+        self.wide_angle_correction = False
+        self.save_transmission = False
+        self.plot_transmission = True
+        self.transmission_wavelength_step = ""
+        self.maximum_transmission_wavelength = ""
+        self.minimum_transmission_wavelength = ""
+        self.polynomial_fit_order = 3
+        self.transmission_fit = FitType.Polynomial
+        self.slice_wavelength = False
+        self.wavelength_interval = ""
+        self.qxy_points = 100
+        self.q1d_step = ""
+        self.maximum_q1d = ""
+        self.minimum_q1d = ""
+        self.wavelength_step = ""
+        self.maximum_wavelength = ""
+        self.minimum_wavelength = ""
+        self.plot_results = True
+        self.reduction_dimensionality = ReductionDimensionality.OneDim
+        self.show_corrections = False
+        self.show_masks = True
+        self.show_radius_wave = False
+        self.show_times = True
+        self.save_results = True
 
     # Bilby specific listener handlers
+    def _on_show_index_selection(self):
+        self._call_settings_listeners(
+            lambda listener: listener.on_show_index_selection(self.show_index))
+
+    def _on_show_times_selection(self):
+        self._call_settings_listeners(
+            lambda listener: listener.on_show_times_selection(self.show_times))
 
     def _on_show_corrections_selection(self):
         self._call_settings_listeners(
@@ -105,6 +155,22 @@ class BilbyBatchReductionGui(RunTabGui):
     # ==================================================================================================================
     # Runs Page properties
     # ==================================================================================================================
+    @property
+    def show_index(self):
+        return self._ui.show_index_checkbox.isChecked()
+
+    @show_index.setter
+    def show_index(self, value):
+        self._ui.show_index_checkbox.setChecked(value)
+
+    @property
+    def show_times(self):
+        return self._ui.show_time_limits_checkbox.isChecked()
+
+    @show_times.setter
+    def show_times(self, value):
+        self._ui.show_time_limits_checkbox.setChecked(value)
+
     @property
     def show_corrections(self):
         return self._ui.show_corrections_checkbox.isChecked()
@@ -139,6 +205,14 @@ class BilbyBatchReductionGui(RunTabGui):
         is_1d = value is ReductionDimensionality.OneDim
         self._ui.reduction_dimensionality_1D.setChecked(is_1d)
         self._ui.reduction_dimensionality_2D.setChecked(not is_1d)
+
+    @property
+    def save_results(self):
+        return self._ui.save_results_checkbox.isChecked()
+
+    @save_results.setter
+    def save_results(self, value):
+        self._ui.save_results_checkbox.setChecked(value)
 
     @property
     def plot_results(self):
@@ -214,32 +288,40 @@ class BilbyBatchReductionGui(RunTabGui):
         self.update_simple_line_edit_field(line_edit="q1d_step_edit",
                                            value=value)
 
-    #---------------------------------------------------------------------------
-
-    @property
-    def qxy_interval(self):
-        return self.get_simple_line_edit_field(line_edit="qxy_interval_edit",
-                                               expected_type=float)
-
-    @qxy_interval.setter
-    def qxy_interval(self, value):
-        self.update_simple_line_edit_field(line_edit="qxy_interval_edit",
-                                           value=value)
-
     @property
     def qxy_points(self):
-        return self.get_simple_line_edit_field(line_edit="qxy_data_points_edit",
-                                               expected_type=float)
+        return self.get_simple_line_edit_field(line_edit="qxy_points_edit",
+                                               expected_type=int)
 
     @qxy_points.setter
     def qxy_points(self, value):
-        self.update_simple_line_edit_field(line_edit="qxy_data_points_edit",
+        self.update_simple_line_edit_field(line_edit="qxy_points_edit",
                                            value=value)
+
+    #---------------------------------------------------------------------------
+
+    @property
+    def wavelength_interval(self):
+        return self.get_simple_line_edit_field(line_edit="wavelength_interval_edit",
+                                               expected_type=float)
+
+    @wavelength_interval.setter
+    def wavelength_interval(self, value):
+        self.update_simple_line_edit_field(line_edit="wavelength_interval_edit",
+                                           value=value)
+
+    @property
+    def slice_wavelength(self):
+        return self._ui.slice_wavelength_checkbox.isChecked()
+
+    @slice_wavelength.setter
+    def slice_wavelength(self, value):
+        self._ui.slice_wavelength_checkbox.setChecked(value)
     
     # ==================================================================================================================
     # Settings Page properties : Transmission Tab
     # ==================================================================================================================    
-
+    # TODO which is the correct property?????
     @property
     def transmission_fit(self):
         return self._ui.transmission_fit_combo.currentIndex()
@@ -263,7 +345,7 @@ class BilbyBatchReductionGui(RunTabGui):
 
     @property
     def polynomial_fit_order(self):
-        return self._ui.poylnominal_fit_order_spinner.value()
+        return self._ui.polynomial_fit_order_spinner.value()
 
     @polynomial_fit_order.setter
     def polynomial_fit_order(self, value):
@@ -331,6 +413,13 @@ class BilbyBatchReductionGui(RunTabGui):
     # ==================================================================================================================
     # Settings Page properties : Advanced Tab
     # ==================================================================================================================
+    @property
+    def solid_angle_correction(self):
+        return self._ui.solid_angle_weighting_checkbox.isChecked()
+
+    @solid_angle_correction.setter
+    def solid_angle_correction(self, value):
+        self._ui.solid_angle_weighting_checkbox.setChecked(value)
 
     @property
     def wide_angle_correction(self):
@@ -362,7 +451,7 @@ class BilbyBatchReductionGui(RunTabGui):
                                                expected_type=str)
 
     @transmission_mask_file.setter
-    def transmission_mask_files(self, value):
+    def transmission_mask_file(self, value):
         self.update_simple_line_edit_field(line_edit="transmission_mask_edit",
                                            value=value)
 
@@ -371,8 +460,8 @@ class BilbyBatchReductionGui(RunTabGui):
         return self.get_simple_line_edit_field(line_edit="sample_mask_edit",
                                                expected_type=str)
 
-    @transmission_mask_file.setter
-    def sample_mask_files(self, value):
+    @sample_mask_file.setter
+    def sample_mask_file(self, value):
         self.update_simple_line_edit_field(line_edit="sample_mask_edit",
                                            value=value)
 

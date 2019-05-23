@@ -126,18 +126,6 @@ class TableModel(object):
         return self._table_entries[row].is_empty()
 
     @staticmethod
-    def column_labels():
-        return ["Sample Scatter", "ssp", "Sample Transmission", "stp", "Sample Direct", 
-		        "sdp", "Can Scatter", "csp", "Can Transmission", "ctp", "Can Direct", 
-				"cdp", "Output Name", "User File", "Sample Thickness", "Sample Height", 
-				"Sample Width", "Sample Shape", "Options"]
-
-    @staticmethod
-    def column_groups():
-        return {'period': [1,3,5,7,9,11],
-                'shape': [15,16,17]}
-
-    @staticmethod
     def create_empty_row():
         row = [''] * 16
         return TableIndexModel(*row)

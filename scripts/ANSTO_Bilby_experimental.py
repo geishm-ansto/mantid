@@ -10,13 +10,24 @@
 """
 from sans.common.enums import SANSFacility
 from sans.ansto import run_tab_models, run_tab_presenter, table_model, state_model
-from sans.ansto.bilby import bilby_presenter, bilby_state_model
+from sans.ansto.bilby import (bilby_presenter, bilby_state_model, bilby_state_data,
+                              bilby_batch_reduction, file_information)
+from sans.ansto.bilby import table_model as bilby_table_model
+from sans.ansto.bilby import file_readers as bilby_file_readers
 from ui.ansto import run_tab_gui, ansto_bilby_gui
+from sans.ansto.table_model import TableModel
+from sans.ansto import file_readers
 
 import imp
 
-imp.reload(run_tab_gui)
+imp.reload(file_information)
+imp.reload(bilby_state_data)
+imp.reload(file_readers)
+imp.reload(bilby_file_readers)
+imp.reload(bilby_batch_reduction)
 imp.reload(table_model)
+imp.reload(bilby_table_model)
+imp.reload(run_tab_gui)
 imp.reload(ansto_bilby_gui)
 imp.reload(run_tab_presenter)
 imp.reload(bilby_presenter)
@@ -28,7 +39,8 @@ imp.reload(run_tab_models)
 #--------------------------------------------------
 # Create the models needed
 #--------------------------------------------------
-models = run_tab_models.RunTabModels()
+models = run_tab_models.RunTabModels(userFileReader=bilby_file_readers.BilbyUserFileReader,
+                                     batchFileReader=bilby_file_readers.BilbyBatchFileReader)
 
 # -------------------------------------------------
 # Create view
