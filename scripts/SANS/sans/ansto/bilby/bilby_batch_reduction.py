@@ -9,10 +9,11 @@
 from __future__ import (absolute_import, division, print_function)
 
 import os
-
+import math
 from mantid.api import (FileFinder)
 from mantid.simpleapi import (LoadBBY, LoadMask, MaskDetectors, ConvertUnits, Rebin, 
-                              SumSpectra, BilbySANSDataProcessor, SaveNISTDAT, SaveAscii)
+                              SumSpectra, BilbySANSDataProcessor, SaveNISTDAT, SaveAscii,
+                              CropWorkspace)
 from sans.state.state_base import StateBase
 from mantidplot import plotSpectrum, DistrFlag, mergePlots, plot2D
 import BilbyCustomFunctions_Reduction as bby
@@ -184,7 +185,21 @@ def _build_output_header(external_mode, used_wl_range, ws_sample, sample_thickne
     header.append('Sample and trasmission masks: ' + sample_mask + ' and ' + transmission_mask + '\n')
 
     return header
-    
+  
+def strip_NaNs(output_workspace, base_output_name):
+    """  Strip NaNs from the 1D OutputWorkspace """  # add isinf
+
+    data = output_workspace.readY(0)
+    start_index = next((index for index in range(len(data)) if not math.isnan(data[index])), None)
+    end_index = next((index for index in range(len(data)-1, -1, -1) if not math.isnan(data[index])), None)
+
+    q_values = output_workspace.readX(0)
+    start_q = q_values[start_index]
+    end_q = q_values[end_index]
+
+    CropWorkspace(InputWorkspace=output_workspace, XMin=start_q, XMax=end_q, OutputWorkspace=base_output_name)
+
+    return base_output_name
 
 def single_reduction_for_batch(state, use_optimizations, plot_results, save_results):
     # this implements the equivalent bilby reduction code
@@ -261,7 +276,7 @@ def single_reduction_for_batch(state, use_optimizations, plot_results, save_resu
                 plot2Dgraph.close() 
                 # is there more elegant way to do it? Problem is that plot2Dgraph creates and plot the graph file at the same time...
         else:
-            bby.strip_NaNs(output_workspace, base_output_name)              
+            strip_NaNs(output_workspace, base_output_name)              
             if plot_results:
                 if plot1Dgraph is None:
                     plot1Dgraph = plotSpectrum(base_output_name, 0, distribution=DistrFlag.DistrFalse,  clearWindow=False) # to create first graph to stick all the rest to it; perhaps there is more elegant way of creating initial empty handler, but I am not aware ... yet

@@ -13,12 +13,7 @@ ISIS SANS instruments.
 
 from __future__ import (absolute_import, division, print_function)
 
-import copy
-import csv
 import os
-import sys
-import time
-import traceback
 import math
 
 from mantid.kernel import DateAndTime

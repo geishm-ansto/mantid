@@ -13,7 +13,6 @@ are not available in the model associated with the data table.
 from __future__ import (absolute_import, division, print_function)
 
 import json
-import copy
 
 import sans.common.constants
 from sans.state.state_base import (StateBase, StringParameter, PositiveIntegerParameter, BoolParameter,
@@ -21,14 +20,7 @@ from sans.state.state_base import (StateBase, StringParameter, PositiveIntegerPa
                                    TypedParameter, validator_sub_state)
 from sans.state.state_functions import (is_pure_none_or_not_none, one_is_none, 
                                         is_not_none_and_first_larger_than_second, validation_message)
-
-from sans.user_file.settings_tags import (OtherId, DetectorId, LimitsId, SetId, SampleId, MonId, TransId, GravityId,
-                                          QResolutionId, FitId, MaskId, event_binning_string_values, set_scales_entry,
-                                          monitor_spectrum, simple_range, monitor_file, det_fit_range,
-                                          q_rebin_values, fit_general, mask_angle_entry, range_entry, position_entry)
-from sans.common.enums import (ReductionDimensionality, ISISReductionMode, RangeStepType, SaveType,
-                               DetectorType, DataType, FitType, SANSInstrument, SANSFacility)
-
+from sans.common.enums import (RangeStepType, SANSInstrument, SANSFacility)
 from sans.state.wavelength import StateWavelength
 
 @rename_descriptor_names

@@ -39,7 +39,10 @@ imp.reload(run_tab_models)
 #--------------------------------------------------
 # Create the models needed
 #--------------------------------------------------
-models = run_tab_models.RunTabModels(userFileReader=bilby_file_readers.BilbyUserFileReader,
+models = run_tab_models.RunTabModels(tableModel=bilby_table_model.TableModel,
+                                     tableRowModel=bilby_table_model.RowModel,
+                                     batchReduction=bilby_batch_reduction.BilbyBatchReduction,
+                                     userFileReader=bilby_file_readers.BilbyUserFileReader,
                                      batchFileReader=bilby_file_readers.BilbyBatchFileReader)
 
 # -------------------------------------------------

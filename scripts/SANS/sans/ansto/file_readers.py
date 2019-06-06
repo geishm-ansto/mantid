@@ -11,7 +11,6 @@ Simple file readers for loading user and batch file data.
 from __future__ import (absolute_import, division, print_function)
 
 import functools
-import os
 import re
 import sys
 import csv
@@ -147,8 +146,6 @@ def parse_run_number(tag, value):
         return s.group(1)
     else:
         return value
-
-bby_run_number = functools.partial(parse_run_number, 'bby')
 
 class BatchFileReader(object):
     """

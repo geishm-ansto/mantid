@@ -43,21 +43,21 @@ class RowModel(core.RowModel):
     def column_labels():
         return ["Index","Sample","T Empty Beam","Transmission Sample","Thickness", "Blocked Beam", 
                 "Start Time", "End Time","Sample Mask", "Transmission Mask",
-                "Suffix","Description","Gravity Fix","Wide Angle Fix", "Radius Cut","Wave Cut"]
+                "Gravity Fix","Wide Angle Fix", "Radius Cut","Wave Cut","Suffix","Description"]
 
     @staticmethod
     def column_keys():
         return ["index", "sample", "t_empty_beam", "t_sample", "thickness", "blocked_beam", 
                 "start_time", "end_time", "sample_mask", "transmission_mask", 
-                "suffix", "description", "gravity_correction","wide_angle_correction", 
-                "radius_cut", "wave_cut"]
+                "gravity_correction","wide_angle_correction", "radius_cut", "wave_cut",
+                "suffix", "description", ]
 
     @staticmethod
     def column_options():
         return {'index': [0],
                 'time_limits': [6,7],
-                'corrections': [12,13],
-                'radius_wave': [14,15],
+                'corrections': [10,11],
+                'radius_wave': [12,13],
                 'masks': [8,9]}
     
     @staticmethod

@@ -12,8 +12,9 @@ from __future__ import (absolute_import, division, print_function)
 
 import functools
 
-from sans.ansto.file_readers import (UserFileReader, BatchFileReader, parse_simple_range, parse_fit_type, parse_integer,
-                        parse_float, parse_scale_float, parse_boolean, parse_run_number)
+from sans.ansto.file_readers import (UserFileReader, BatchFileReader, parse_simple_range, parse_fit_type,
+                                     parse_integer, parse_float, parse_scale_float,
+                                     parse_boolean, parse_run_number)
 
 
 class BilbyUserFileReader(UserFileReader):

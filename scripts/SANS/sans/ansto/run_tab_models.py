@@ -11,19 +11,10 @@ Primary factory for creating the table models, reduction code, etc.
 """
 from __future__ import (absolute_import, division, print_function)
 
-from sans.ansto.table_model import TableModel
-from sans.ansto.bilby import bilby_batch_reduction
-from sans.ansto.bilby import table_model as bilby_models
-from sans.user_file import user_file_reader
-from sans.ansto import file_readers
-
 class RunTabModels(object):
 	
-	def __init__(self, tableModel=bilby_models.TableModel, 
-			  tableRowModel=bilby_models.RowModel, 
-			  batchReduction=bilby_batch_reduction.BilbyBatchReduction,
-			  userFileReader=file_readers.UserFileReader, 
-			  batchFileReader=file_readers.BatchFileReader):
+	def __init__(self, tableModel, tableRowModel, batchReduction,
+              userFileReader, batchFileReader):
 		self._table_model = tableModel
 		self._table_row_model = tableRowModel
 		self._batch_reduction = batchReduction

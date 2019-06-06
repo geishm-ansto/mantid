@@ -34,6 +34,7 @@ class BatchProcessRunner(QObject):
         self._worker = None
 
     def process_states(self, states, use_optimizations, plot_results, save_results):
+        self._finish_up = False
         self._worker = Worker(self._process_states_on_thread, states, use_optimizations, 
                               plot_results, save_results)
         self._worker.signals.finished.connect(self.on_finished)

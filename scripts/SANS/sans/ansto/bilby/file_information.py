@@ -13,7 +13,6 @@ import re
 import h5py as h5
 import tarfile
 import tempfile
-from abc import (ABCMeta, abstractmethod)
 from mantid.kernel import DateAndTime
 from sans.common.enums import (SANSInstrument, SANSFacility, FileType, SampleShape)
 from sans.common.file_information import (SANSFileInformation)

@@ -13,7 +13,6 @@ ISIS SANS instruments.
 
 from __future__ import (absolute_import, division, print_function)
 
-import copy
 import csv
 import os
 import sys
@@ -23,10 +22,8 @@ import traceback
 from mantid.api import (FileFinder)
 from mantid.kernel import Logger, ConfigService
 
-from sans.common.constants import ALL_PERIODS
-from sans.common.enums import (BatchReductionEntry, RangeStepType, SampleShape, FitType, RowState, SANSInstrument, OutputMode)
-from sans.gui_logic.gui_common import (get_reduction_mode_strings_for_gui, get_string_for_gui_from_instrument,
-                                       add_dir_to_datasearch, remove_dir_from_datasearch)
+from sans.common.enums import (RowState, SANSInstrument)
+from sans.gui_logic.gui_common import (add_dir_to_datasearch, remove_dir_from_datasearch)
 from sans.gui_logic.presenter.add_runs_presenter import OutputDirectoryObserver as SaveDirectoryObserver
 from sans.state.state_base import StateBase
 from ui.sans_isis.work_handler import WorkHandler
@@ -34,20 +31,8 @@ from ui.sans_isis.work_handler import WorkHandler
 from sans.ansto.batch_process_runner import BatchProcessRunner
 from ui.ansto.run_tab_gui import RunTabGui
 
-from qtpy import PYQT4
-IN_MANTIDPLOT = False
-if PYQT4:
-    try:
-        from mantidplot import graph, newGraph
-        IN_MANTIDPLOT = True
-    except ImportError:
-        pass
-else:
-    from mantidqt.plotting.functions import get_plot_fig
-
 row_state_to_colour_mapping = {RowState.Unprocessed: '#FFFFFF', RowState.Processed: '#d0f4d0',
                                RowState.Error: '#ff7373', RowState.Scheduled: '#faebd7'}
-
 
 def log_times(func):
     """
@@ -140,10 +125,6 @@ class RunTabPresenter(object):
         self._models = models
         # Logger
         self.sans_logger = Logger("SANS")
-        # Name of graph to output to
-        self.output_graph = 'SANS-Latest'
-        # For matplotlib continuous plotting
-        self.output_fig = None
         self.progress = 0
 
         # Models that are used by the presenter
@@ -760,6 +741,7 @@ class RunTabPresenter(object):
         filewriter.writerow(self._table_model.column_keys())
         for row in rows:
                 table_row = self._table_model.get_table_entry(row).to_list()
+                table_row[0] = row
                 filewriter.writerow(table_row)
 
 
