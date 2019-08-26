@@ -20,6 +20,9 @@ from sans.ansto import file_readers
 
 import imp
 
+# reload modules during development to avoid relaunching the append
+# TODO remove before mantid integration
+
 imp.reload(file_information)
 imp.reload(bilby_state_data)
 imp.reload(file_readers)
@@ -32,7 +35,6 @@ imp.reload(ansto_bilby_gui)
 imp.reload(run_tab_presenter)
 imp.reload(bilby_presenter)
 imp.reload(run_tab_models)
-
 
 #--------------------------------------------------
 # Create the models needed
