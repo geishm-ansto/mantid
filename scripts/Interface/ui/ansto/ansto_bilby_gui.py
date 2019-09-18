@@ -88,7 +88,7 @@ class BilbyBatchReductionGui(RunTabGui):
     def _setup_page_tabs(self, list_widget):
 
         super(BilbyBatchReductionGui, self)._setup_page_tabs(list_widget)
-        settings_icon = icons.get_icon("fa.cog")
+        settings_icon = icons.get_icon("mdi.settings")
         _ = QListWidgetItem(settings_icon, "Settings", list_widget)  # noqa
 
     def setup_layout(self, all_columns, column_groups, hidden_groups):

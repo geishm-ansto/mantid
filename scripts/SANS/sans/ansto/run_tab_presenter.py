@@ -20,11 +20,11 @@ import time
 import traceback
 
 from mantid.api import (FileFinder)
-from mantid.kernel import Logger, ConfigService
+from mantid.kernel import Logger, ConfigService, ConfigPropertyObserver
 
 from sans.common.enums import (RowState, SANSInstrument)
 from sans.gui_logic.gui_common import (add_dir_to_datasearch, remove_dir_from_datasearch)
-from sans.gui_logic.presenter.add_runs_presenter import OutputDirectoryObserver as SaveDirectoryObserver
+#from sans.gui_logic.presenter.add_runs_presenter import OutputDirectoryObserver as SaveDirectoryObserver
 from sans.state.state_base import StateBase
 from ui.sans_isis.work_handler import WorkHandler
 
@@ -51,6 +51,13 @@ def log_times(func):
 
     return run
 
+class SaveDirectoryObserver(ConfigPropertyObserver):
+    def __init__(self, callback):
+        super(SaveDirectoryObserver, self).__init__("defaultsave.directory")
+        self.callback = callback
+
+    def onPropertyValueChanged(self, new_value, old_value):
+        self.callback(new_value)
 
 class RunTabPresenter(object):
     class ConcreteRunTabListener(RunTabGui.RunTabListener):

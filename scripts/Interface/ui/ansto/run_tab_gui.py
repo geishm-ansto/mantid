@@ -143,12 +143,12 @@ class RunTabGui(QMainWindow):
         self._setup_progress_bar()
 
     def _setup_connections(self):
-        self._ui.paste_button.setIcon(icons.get_icon("fa.paste"))
-        self._ui.copy_button.setIcon(icons.get_icon("fa.copy"))
-        self._ui.cut_button.setIcon(icons.get_icon("fa.cut"))
-        self._ui.erase_button.setIcon(icons.get_icon("fa.eraser"))
-        self._ui.delete_row_button.setIcon(icons.get_icon("fa.trash"))
-        self._ui.insert_row_button.setIcon(icons.get_icon("fa.table"))
+        self._ui.paste_button.setIcon(icons.get_icon("mdi.content-paste"))
+        self._ui.copy_button.setIcon(icons.get_icon("mdi.content-copy"))
+        self._ui.cut_button.setIcon(icons.get_icon("mdi.content-cut"))
+        self._ui.erase_button.setIcon(icons.get_icon("mdi.eraser"))
+        self._ui.delete_row_button.setIcon(icons.get_icon("mdi.table-row-remove"))
+        self._ui.insert_row_button.setIcon(icons.get_icon("mdi.table-row-plus-after"))
 
         self._ui.paste_button.clicked.connect(self._paste_rows_requested)
         self._ui.copy_button.clicked.connect(self._copy_rows_requested)
@@ -219,7 +219,7 @@ class RunTabGui(QMainWindow):
         list_widget.currentRowChanged.connect(self.set_current_page)
         self.set_current_page(0)
 
-        runs_icon = icons.get_icon("fa.play-circle-o")
+        runs_icon = icons.get_icon("mdi.play")
         _ = QListWidgetItem(runs_icon, "Runs", list_widget)  # noqa
 
 
