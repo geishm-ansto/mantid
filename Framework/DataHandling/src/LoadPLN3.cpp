@@ -5,7 +5,7 @@
 //   Institut Laue - Langevin & CSNS, Institute of High Energy Physics, CAS
 // SPDX - License - Identifier: GPL - 3.0 +
 
-#include "MantidDataHandling/LoadPLN2.h"
+#include "MantidDataHandling/LoadPLN3.h"
 #include "MantidAPI/Axis.h"
 #include "MantidAPI/FileProperty.h"
 #include "MantidAPI/LogManager.h"
@@ -147,80 +147,6 @@ void MapNeXusToSeries(NeXus::NXEntry &entry, const std::string &path, const floa
   AddSinglePointTimeSeriesProperty<double>(logManager, time, name, value * factor);
 }
 
-// Recovers the index limits that satisfy the start, end time and
-// max events. It assumes the timestamp is ordered with increasing values.
-std::pair<uint64_t, uint64_t> extractTimeStamps(NeXus::NXEntry &entry, const std::string &path, uint64_t startTime,
-                                                uint64_t endTime, std::vector<uint64_t> &timeStamp, size_t maxEvents) {
-
-  auto dataset = entry.openNXDataSet<uint64_t>(path + "/time");
-  dataset.load();
-  auto p = dataset();
-  size_t startIx{0};
-  size_t maxn = dataset.size();
-  while (*p < startTime && startIx < maxn) {
-    startIx++;
-    p++;
-  }
-  size_t endIx = startIx;
-  while (*p < endTime && endIx < maxn) {
-    endIx++;
-    p++;
-  }
-  endIx = std::min(endIx, startIx + maxEvents);
-  timeStamp.assign(dataset() + startIx, dataset() + endIx);
-
-  return {startIx, endIx};
-}
-
-// Recovers the index limits that satisfy the start, end time and
-// max events. Extracts the timestamps from {event_index, event_time_offset,
-// event_time_zero} components. The path is to the group level.
-// It assumes the timestamp is ordered with increasing values.
-void extractDetectorEvents(NeXus::NXEntry &entry, const std::string &path, uint64_t startTime, uint64_t endTime,
-                           std::vector<uint64_t> &timeStamp, std::vector<uint32_t> &pixelID,
-                           std::vector<uint32_t> &sortIX) {
-
-  // Get the event index, base values and values and
-  auto eventID = entry.openNXDataSet<uint32_t>(path + "/event_id");
-  eventID.load();
-  auto eventIndex = entry.openNXDataSet<uint32_t>(path + "/event_index");
-  eventIndex.load();
-  auto zeroOffset = entry.openNXDataSet<uint64_t>(path + "/event_time_zero");
-  zeroOffset.load();
-  auto offsetValues = entry.openNXDataSet<uint32_t>(path + "/event_time_offset");
-  offsetValues.load();
-  uint32_t segments = eventIndex.size();
-  uint32_t maxn = offsetValues.size();
-
-  // Reset the time stamp and event id vectors, then run through every segment
-  // and append the elements to the vector and finally sort the data
-  timeStamp.clear();
-  pixelID.clear();
-  for (uint32_t offsetIx = 0; offsetIx < segments; offsetIx++) {
-    if (zeroOffset[offsetIx] < endTime) {
-      auto baseTime = zeroOffset[offsetIx];
-      auto startIx = eventIndex[offsetIx];
-      auto endIx = (offsetIx + 1 < segments ? eventIndex[offsetIx + 1] : maxn);
-      uint32_t minDT = (baseTime < startTime ? uint32_t(startTime - baseTime) : 0);
-      uint32_t maxDT = uint32_t(endTime - baseTime);
-      while (startIx < endIx) {
-        auto dt = offsetValues[startIx];
-        if (minDT <= dt && dt < maxDT) {
-          timeStamp.emplace_back(dt + baseTime);
-          pixelID.emplace_back(eventID[startIx]);
-        }
-        startIx++;
-      }
-    }
-  }
-
-  // Finally, sort the data by the observation time
-  sortIX.resize(timeStamp.size());
-  for (uint32_t i = 0; i < sortIX.size(); i++)
-    sortIX[i] = i;
-  std::sort(sortIX.begin(), sortIX.end(), [&](const int &a, const int &b) { return (timeStamp[a] < timeStamp[b]); });
-}
-
 // Extract the relevant timestamp data. Get the timestamp first to
 // determine the index limits (it assumed the timestamp is ordered).
 // Then extract the value from that range. If extn is not zero it will
@@ -253,90 +179,87 @@ int extractEvents(NeXus::NXEntry &entry, const std::string &path, uint64_t start
   return endIx - startIx;
 }
 
-int64_t beamMonitorCounts(NeXus::NXEntry &entry, const std::string &path, uint64_t startTime, uint64_t endTime) {
+int64_t beamMonitorCounts(NeXus::NXEntry &entry, const std::string &path, uint64_t startTime, uint64_t endTime,
+                          bool sumValues) {
   std::vector<uint64_t> times;
   std::vector<int64_t> values;
   auto n = extractEvents<int64_t>(entry, path, startTime, endTime, times, values, 0);
 
-  // take a fraction of the first and last based on the timestamp
-  // note that values[k] is events between times[k-1] and times[k]
-  // so the lead in value needs to be subtracted and the tail added
-  int64_t count{0};
-  for (int i = 1; i < n - 1; i++)
-    count += values[i];
-  if (n > 1) {
-    if (startTime > times[0]) {
-      int64_t delta = startTime - times[0];
-      int64_t frac = values[1] * delta;
-      frac /= (times[1] - times[0]);
-      count -= frac;
+  if (sumValues) {
+    // take a fraction of the first and last based on the timestamp
+    // note that values[k] is events between times[k-1] and times[k]
+    // so the lead in value needs to be subtracted and the tail added
+    int64_t count{0};
+    for (int i = 1; i < n - 1; i++)
+      count += values[i];
+    if (n > 1) {
+      if (startTime > times[0]) {
+        int64_t delta = startTime - times[0];
+        int64_t frac = values[1] * delta;
+        frac /= (times[1] - times[0]);
+        count -= frac;
+      }
+      if (endTime > times[n - 2]) {
+        int64_t delta = endTime - times[n - 2];
+        int64_t frac = values[n - 1] * delta;
+        frac /= (times[n - 1] - times[n - 2]);
+        count += frac;
+      }
     }
-    if (endTime > times[n - 2]) {
-      int64_t delta = endTime - times[n - 2];
-      int64_t frac = values[n - 1] * delta;
-      frac /= (times[n - 1] - times[n - 2]);
-      count += frac;
-    }
-  }
 
-  return count;
+    return count;
+  } else {
+    return values[n - 1];
+  }
 }
 
 template <class IEventHandler>
 void ReadEventData(NeXus::NXEntry &entry, IEventHandler &handler, uint64_t start_nsec, uint64_t end_nsec,
-                   const std::string &neutron_data, const std::string &primary_chopper,
-                   const std::string &aux_chopper) {
+                   const std::string &neutron_path) {
 
-  // load the chopper timebase and aux chopper if name included
-  // sort the timebase
-  auto use_chopper = !aux_chopper.empty();
+  // the detector event time zero is the actual chopper time and all the events are
+  // relative to this base
 
-  // read chopper timebase(s) into memory
-  auto chopperDataset = entry.openNXDataSet<uint64_t>(primary_chopper + "/time");
-  chopperDataset.load();
+  // Get the event index, base values and values and
+  auto eventID = entry.openNXDataSet<uint32_t>(neutron_path + "/event_id");
+  eventID.load();
+  auto eventIndex = entry.openNXDataSet<uint32_t>(neutron_path + "/event_index");
+  eventIndex.load();
+  auto zeroOffset = entry.openNXDataSet<uint64_t>(neutron_path + "/event_time_zero");
+  zeroOffset.load();
+  auto offsetValues = entry.openNXDataSet<uint32_t>(neutron_path + "/event_time_offset");
+  offsetValues.load();
+  uint32_t numPulses = eventIndex.size();
+  uint32_t totalEvents = offsetValues.size();
 
-  //  for each event id group:
-  //    load the neutron group (time and pixel id) and convert to absolute time
-  //    sort the neutron group and keep the sort index
-  //    find minimum histogram for base time (ix)
-  //    for entry in sort index
-  //      time += base time
-  //      if time >= chopper[ix+1]:
-  //        for i in range(ix, N):
-  //          if time < chopper[i]:
-  //            ix = i
-  //            break
-  //      tof = time - chopper[ix]
-  //      send the pixel, tof, aux_tof to the handler
-  //    update the progress bar
+  // The chopper times are monotonically increasing but there may be duplicate
+  // pulse times when a 'efu' buffer is full mid pulse. In this case the buffer
+  // is sent but the next buffer uses the same pulse time. Only send the frame
+  // event when it changes.
 
-  // load the neutron events
-  std::vector<uint32_t> sortIX;
-  std::vector<uint32_t> pixelID;
-  std::vector<uint64_t> timeStamp;
-  extractDetectorEvents(entry, neutron_data, start_nsec, end_nsec, timeStamp, pixelID, sortIX);
+  uint64_t lastFrameTS{0};
 
-  auto frames = chopperDataset.size();
-  size_t cix = 0;
-  uint64_t basePulse = chopperDataset()[cix];
-  uint64_t nextPulse = (cix + 1 < frames ? chopperDataset()[cix + 1] : -1);
-
-  for (auto &ix : sortIX) {
-    auto eventTime = timeStamp[ix];
-    while (eventTime >= nextPulse && cix < frames) {
-      basePulse = nextPulse;
-      nextPulse = (cix + 1 < frames ? chopperDataset()[cix + 1] : -1);
-      cix++;
-      handler.newFrame();
+  // Run through the data and forward the event data if the pulse time occurs between
+  // start and end time. To be clear the start and end time relates to the pulse times.
+  for (uint32_t ix = 0; ix < numPulses; ix++) {
+    auto pulseTime = zeroOffset[ix];
+    if (start_nsec <= pulseTime && pulseTime < end_nsec) {
+      if (pulseTime > lastFrameTS) {
+        handler.newFrame();
+        lastFrameTS = pulseTime;
+      }
+      auto baseIndex = eventIndex[ix];
+      auto lastIndex = (ix + 1 < numPulses ? eventIndex[ix + 1] : totalEvents);
+      for (uint32_t j = baseIndex; j < lastIndex; j++) {
+        // convert tof to microseconds as double and pixel as (x,y)
+        // and send to handler
+        double tof = offsetValues[j] * 1.0e-3;
+        auto pixel = eventID[j];
+        size_t y = pixel % TUBE_RESOLUTION;
+        size_t x = (pixel - y) / TUBE_RESOLUTION;
+        handler.addEvent(x, y, tof, 0.0);
+      }
     }
-
-    // tof in microseconds as double and pixel as (x,y)
-    // and send to handler
-    double tof = (eventTime - basePulse) * 1.0e-3;
-    auto pixel = pixelID[ix];
-    size_t y = pixel % TUBE_RESOLUTION;
-    size_t x = (pixel - y) / TUBE_RESOLUTION;
-    handler.addEvent(x, y, tof, 0.0);
   }
 }
 
@@ -356,33 +279,23 @@ bool addTimeZone(const std::string &ins, std::string &outs) {
 }
 
 // Extract the start and end time in nsecs from the nexus file
-// Based on entry/time_stamp/[time, value] and START_TIME
+// based on entry/scan_dataset/[time, value]
 //
-// The "time_stamp" captures the start and end of dataset,
-// start = START_TIME + time_stamp/value[ix]
-// end = time_stamp/time[ix]
-//
-// TBD *** need to clarify how this will work in future
+// The time is the start time value is duration in nsec for each dataset
 //
 std::pair<uint64_t, uint64_t> getTimeScanLimits(NeXus::NXEntry &entry, int datasetIx) {
 
-  auto timestamp = entry.openNXDataSet<uint64_t>("time_stamp/time");
+  auto timestamp = entry.openNXDataSet<uint64_t>("scan_dataset/time");
   timestamp.load();
-  auto offset = entry.openNXDataSet<int64_t>("time_stamp/value");
+  auto offset = entry.openNXDataSet<int64_t>("scan_dataset/value");
   offset.load();
-
-  using Types::Core::DateAndTime;
-  constexpr uint64_t secToNanoSec = 1000000000LL;
-  auto startString = GetNeXusValue<std::string>(entry, "start_time", "2000-01-01 00:00:00", 0);
-  std::string startTZ;
-  addTimeZone(startString, startTZ);
-  DateAndTime startTime(startTZ);
-  uint64_t start = startTime.totalNanoseconds() + DateAndTime::EPOCH_DIFF * secToNanoSec;
-  start += offset()[datasetIx] * secToNanoSec;
-  //  start -= (10 * 3600 * secToNanoSec);  // TZ hack for now
-  uint64_t end = timestamp()[datasetIx];
-
-  return {start, end};
+  try {
+    auto start = timestamp[datasetIx];
+    auto end = start + offset[datasetIx];
+    return {start, end};
+  } catch (std::runtime_error &) {
+    return {0, 0};
+  }
 }
 
 // map the comma separated range of indexes to the vector via a lambda function
@@ -446,7 +359,7 @@ public:
 
 } // anonymous namespace
 
-namespace PLN2 {
+namespace PLN3 {
 
 //
 // In the future the ANSTO helper and event file loader will be generalized to
@@ -677,15 +590,13 @@ void loadEvents(API::Progress &prog, const char *progMsg, EP &eventProcessor, Ne
 
   // ReadEventFile(loader, eventProcessor, progTracker, 100, false);
   const std::string neutronPath{"instrument/detector_events"};
-  const std::string chopperPath{"instrument/chopper_events"};
-  const std::string auxillaryPath{""};
-  ReadEventData(entry, eventProcessor, start_nsec, end_nsec, neutronPath, chopperPath, auxillaryPath);
+  ReadEventData(entry, eventProcessor, start_nsec, end_nsec, neutronPath);
 }
-} // namespace PLN2
+} // namespace PLN3
 
 /// Initialise the algorithm and declare the properties for the
 /// nexus descriptor.
-void LoadPLN2::init() {
+void LoadPLN3::init() {
 
   // Specify file extensions which can be associated with a specific file.
   std::vector<std::string> exts;
@@ -732,7 +643,7 @@ void LoadPLN2::init() {
 }
 
 /// Creates an event workspace and sets the \p title.
-void LoadPLN2::createWorkspace(const std::string &title) {
+void LoadPLN3::createWorkspace(const std::string &title) {
 
   // Create the workspace
   m_localWorkspace = std::make_shared<DataObjects::EventWorkspace>();
@@ -754,7 +665,7 @@ void LoadPLN2::createWorkspace(const std::string &title) {
 ///   Load the data values and adjust TOF
 ///   Set up the masks
 /// </summary>
-void LoadPLN2::exec() {
+void LoadPLN3::exec() {
 
   namespace fs = boost::filesystem;
 
@@ -820,9 +731,9 @@ void LoadPLN2::exec() {
   double wavelength = logManager.getTimeSeriesProperty<double>("Wavelength")->firstValue();
   double velocity = PhysicalConstants::h / (PhysicalConstants::NeutronMass * wavelength * 1e-10);
   double sampleTime = 1.0e6 * sourceSample / velocity;
-  PLN2::EventCounter eventCounter(roi, detMapIndex, framePeriod, gatePeriod, timeBoundary, eventCounts, sourceSample,
+  PLN3::EventCounter eventCounter(roi, detMapIndex, framePeriod, gatePeriod, timeBoundary, eventCounts, sourceSample,
                                   velocity, m_detectorL2);
-  PLN2::loadEvents(prog, "loading neutron counts", eventCounter, nxsEntry, m_startTime, m_endTime);
+  PLN3::loadEvents(prog, "loading neutron counts", eventCounter, nxsEntry, m_startTime, m_endTime);
   ANSTO::ProgressTracker progTracker(prog, "creating neutron event lists", numberHistograms, Progress_ReserveMemory);
   prepareEventStorage(progTracker, eventCounts, eventVectors);
 
@@ -840,9 +751,9 @@ void LoadPLN2::exec() {
   }
   logManager.addProperty("CalibrateTOF", (calibrateTOF ? 1 : 0));
   AddSinglePointTimeSeriesProperty<double>(logManager, m_startRun, "TOFCorrection", tofCorrection);
-  PLN2::EventAssigner eventAssigner(roi, detMapIndex, framePeriod, gatePeriod, timeBoundary, eventVectors,
+  PLN3::EventAssigner eventAssigner(roi, detMapIndex, framePeriod, gatePeriod, timeBoundary, eventVectors,
                                     start_nanosec, tofCorrection, sampleTime);
-  PLN2::loadEvents(prog, "loading neutron events (TOF)", eventAssigner, nxsEntry, m_startTime, m_endTime);
+  PLN3::loadEvents(prog, "loading neutron events (TOF)", eventAssigner, nxsEntry, m_startTime, m_endTime);
 
   // perform a calibration and then TOF conversion if necessary
   // and update the tof limits
@@ -876,7 +787,7 @@ void LoadPLN2::exec() {
 }
 
 /// Recovers the L2 neutronic distance for each detector.
-void LoadPLN2::loadDetectorL2Values() {
+void LoadPLN3::loadDetectorL2Values() {
 
   m_detectorL2 = std::vector<double>(HISTOGRAMS);
   const auto &detectorInfo = m_localWorkspace->detectorInfo();
@@ -889,7 +800,7 @@ void LoadPLN2::loadDetectorL2Values() {
 }
 
 /// Set up the detector masks to the region of interest \p roi.
-void LoadPLN2::setupDetectorMasks(std::vector<bool> &roi) {
+void LoadPLN3::setupDetectorMasks(std::vector<bool> &roi) {
 
   // count total number of masked bins
   size_t maskedBins = 0;
@@ -915,7 +826,7 @@ void LoadPLN2::setupDetectorMasks(std::vector<bool> &roi) {
 
 /// Allocate space for the event storage in \p eventVectors after the
 /// \p eventCounts have been determined.
-void LoadPLN2::prepareEventStorage(ANSTO::ProgressTracker &progTracker, std::vector<size_t> &eventCounts,
+void LoadPLN3::prepareEventStorage(ANSTO::ProgressTracker &progTracker, std::vector<size_t> &eventCounts,
                                    std::vector<EventVector_pt> &eventVectors) {
 
   size_t numberHistograms = eventCounts.size();
@@ -937,7 +848,7 @@ void LoadPLN2::prepareEventStorage(ANSTO::ProgressTracker &progTracker, std::vec
 
 /// Region of interest is defined by the \p selected detectors and the
 /// \p maskfile.
-std::vector<bool> LoadPLN2::createRoiVector(const std::string &selected, const std::string &maskfile) {
+std::vector<bool> LoadPLN3::createRoiVector(const std::string &selected, const std::string &maskfile) {
 
   std::vector<bool> result(HISTOGRAMS, true);
 
@@ -979,7 +890,7 @@ std::vector<bool> LoadPLN2::createRoiVector(const std::string &selected, const s
 }
 
 /// Load parameters from input \p nxsFile and save to the log manager, \p logm.
-void LoadPLN2::loadParameters(NeXus::NXEntry &entry, API::LogManager &logm) {
+void LoadPLN3::loadParameters(NeXus::NXEntry &entry, API::LogManager &logm) {
 
   MapNeXusToProperty<std::string>(entry, "sample/name", "unknown", logm, "SampleName", "", 0);
   MapNeXusToProperty<std::string>(entry, "sample/description", "unknown", logm, "SampleDescription", "", 0);
@@ -1019,13 +930,13 @@ void LoadPLN2::loadParameters(NeXus::NXEntry &entry, API::LogManager &logm) {
   MapNeXusToSeries<float>(entry, "instrument/detector/tofw/value", 5.0, logm, m_startRun, "ChannelWidth", 1, 0);
   MapNeXusToSeries<float>(entry, "sample/mscor/value", 0.0, logm, m_startRun, "SampleRotation", 1, 0);
 
-  auto bmc = beamMonitorCounts(entry, "monitor/bm1_counts", m_startTime, m_endTime);
+  auto bmc = beamMonitorCounts(entry, "monitor/bm1_counts", m_startTime, m_endTime, false);
   AddSinglePointTimeSeriesProperty<int32_t>(logm, m_startRun, "MonitorCounts", (int32_t)bmc);
 }
 
 /// Load the environment variables from the \p nxsFile and save as
 /// time series to the log manager, \p logm.
-void LoadPLN2::loadEnvironParameters(NeXus::NXEntry &entry, API::LogManager &logm) {
+void LoadPLN3::loadEnvironParameters(NeXus::NXEntry &entry, API::LogManager &logm) {
 
   auto time_str = logm.getPropertyValueAsType<std::string>("end_time");
 
@@ -1034,12 +945,12 @@ void LoadPLN2::loadEnvironParameters(NeXus::NXEntry &entry, API::LogManager &log
                                    "T01SP07", "T01SP08",  "T2S1",   "T2S2",   "T2S3",   "T2S4",   "T2SP1",   "T2SP2"};
 
   for (const auto &tag : tags) {
-    MapNeXusToSeries<double>(entry, "data/" + tag, 0.0, logm, time_str, "env_" + tag, 1.0, m_datasetIndex);
+    MapNeXusToSeries<float>(entry, "control/" + tag + "/value", 0.0, logm, time_str, "env_" + tag, 1.0, m_datasetIndex);
   }
 }
 
 /// Load the instrument definition.
-void LoadPLN2::loadInstrument() {
+void LoadPLN3::loadInstrument() {
 
   // loads the IDF and parameter file
   API::IAlgorithm_sptr loadInstrumentAlg = createChildAlgorithm("LoadInstrument");
@@ -1050,42 +961,41 @@ void LoadPLN2::loadInstrument() {
 }
 
 /// Algorithm's version for identification. @see Algorithm::version
-int LoadPLN2::version() const { return 1; }
+int LoadPLN3::version() const { return 1; }
 
 /// Similar algorithms. @see Algorithm::seeAlso
-const std::vector<std::string> LoadPLN2::seeAlso() const { return {"Load", "LoadEMU"}; }
+const std::vector<std::string> LoadPLN3::seeAlso() const { return {"Load", "LoadEMU"}; }
 /// Algorithm's category for identification. @see Algorithm::category
-const std::string LoadPLN2::category() const { return "DataHandling\\Nexus;DataHandling\\ANSTO "; }
+const std::string LoadPLN3::category() const { return "DataHandling\\Nexus;DataHandling\\ANSTO "; }
 
 /// Algorithms name for identification. @see Algorithm::name
-const std::string LoadPLN2::name() const { return "LoadPLN2"; }
+const std::string LoadPLN3::name() const { return "LoadPLN3"; }
 
 /// Algorithm's summary for use in the GUI and help. @see Algorithm::summary
-const std::string LoadPLN2::summary() const { return "Loads an ANSTO nexus like file into a workspace."; }
+const std::string LoadPLN3::summary() const { return "Loads an ANSTO nexus like file into a workspace."; }
 
 /// Return the confidence as an integer value that this algorithm can
 /// load the file \p descriptor.
-int LoadPLN2::confidence(Kernel::NexusDescriptor &descriptor) const {
+int LoadPLN3::confidence(Kernel::NexusDescriptor &descriptor) const {
   if (descriptor.extension() != ".nxs")
     return 0;
 
   if (descriptor.pathExists("/entry1/program_name") && descriptor.pathExists("/entry1/experiment/gumtree_version") &&
       descriptor.pathExists("/entry1/instrument/detector_events") &&
-      descriptor.pathExists("/entry1/instrument/chopper_events") &&
       descriptor.pathExists("/entry1/instrument/aperture/sh1") &&
       descriptor.pathExists("/entry1/instrument/ag1010/MEAS/Temperature/value") &&
       descriptor.pathExists("/entry1/instrument/detector/daq_dirname") &&
       descriptor.pathExists("/entry1/instrument/detector/dataset_number/value") &&
-      !descriptor.pathExists("/entry1/scan_dataset/value") && descriptor.pathExists("/entry1/monitor/bm1_counts") &&
+      descriptor.pathExists("/entry1/scan_dataset/value") && descriptor.pathExists("/entry1/monitor/bm1_counts") &&
       descriptor.pathExists("/entry1/monitor/time")) {
-    return 90;
+    return 95;
   } else {
     return 0;
   }
 }
 
 // register the algorithms into the AlgorithmFactory
-DECLARE_NEXUS_FILELOADER_ALGORITHM(LoadPLN2)
+DECLARE_NEXUS_FILELOADER_ALGORITHM(LoadPLN3)
 
 } // namespace DataHandling
 } // namespace Mantid

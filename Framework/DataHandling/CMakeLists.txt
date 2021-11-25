@@ -106,6 +106,7 @@ set(SRC_FILES
     src/LoadPDFgetNFile.cpp
     src/LoadPLN.cpp
     src/LoadPLN2.cpp
+    src/LoadPLN3.cpp
     src/LoadPSIMuonBin.cpp
     src/LoadParameterFile.cpp
     src/LoadPreNexus.cpp
@@ -321,6 +322,7 @@ set(INC_FILES
     inc/MantidDataHandling/LoadPDFgetNFile.h
     inc/MantidDataHandling/LoadPLN.h
     inc/MantidDataHandling/LoadPLN2.h
+    inc/MantidDataHandling/LoadPLN3.h
     inc/MantidDataHandling/LoadPSIMuonBin.h
     inc/MantidDataHandling/LoadParameterFile.h
     inc/MantidDataHandling/LoadPreNexus.h
