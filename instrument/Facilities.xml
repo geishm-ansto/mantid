@@ -920,6 +920,11 @@
     <technique>Small Angle Scattering</technique>
   </instrument>
 
+  <instrument name="QUOKKA" shortname="QKK">
+    <zeropadding size="7"/>
+    <technique>Small Angle Scattering</technique>
+  </instrument>
+
   <instrument name="EMUau" shortname="EMU">
     <zeropadding size="7"/>
     <technique>Neutron Spectroscopy</technique>

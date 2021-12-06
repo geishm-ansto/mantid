@@ -15,16 +15,41 @@
 #include "MantidGeometry/Instrument/RectangularDetector.h"
 #include "MantidGeometry/Objects/ShapeFactory.h"
 #include "MantidIndexing/IndexInfo.h"
+#include "MantidKernel/OptionalBool.h"
 #include "MantidKernel/UnitFactory.h"
 #include "MantidNexus/NexusClasses.h"
 
 #include <Poco/File.h>
 
 #include <fstream>
+#include <regex>
 
 using namespace Mantid::DataHandling;
 using namespace Mantid::API;
 using namespace Mantid::Kernel;
+using namespace Mantid::NeXus;
+
+namespace {
+
+template <typename TYPE>
+void AddSinglePointTimeSeriesProperty(LogManager &logManager, const std::string &time, const std::string &name,
+                                      const TYPE value) {
+  // create time series property and add single value
+  auto p = new TimeSeriesProperty<TYPE>(name);
+  p->addValue(time, value);
+
+  // add to log manager
+  logManager.addProperty(p);
+}
+
+int GetRunNumber(NXEntry &entry) {
+  std::string name = entry.name();
+  const std::regex pattern("^QKK0+(?!$)");
+  auto str = std::regex_replace(name, pattern, "");
+  return stoi(str);
+}
+
+} // namespace
 
 namespace Mantid {
 namespace DataHandling {
@@ -40,8 +65,9 @@ DECLARE_NEXUS_FILELOADER_ALGORITHM(LoadQKK)
  */
 int LoadQKK::confidence(Kernel::NexusDescriptor &descriptor) const {
   const auto &firstEntryName = descriptor.firstEntryNameType().first;
-  if (descriptor.pathExists("/" + firstEntryName + "/data/hmm_xy"))
-    return 80;
+  std::regex qkkRE("QKK([0-9]*)");
+  if (std::regex_match(firstEntryName, qkkRE) && descriptor.pathExists("/" + firstEntryName + "/data/hmm_xy"))
+    return 90;
   else
     return 0;
 }
@@ -74,14 +100,24 @@ void LoadQKK::exec() {
   NeXus::NXRoot root(filename);
   // Open the first NXentry found in the file.
   NeXus::NXEntry entry = root.openFirstEntry();
-  // Open NXdata group with name "data"
+
+  createWorkspace(entry);
+  setFinalProperties(filename);
+  loadMetaData(entry);
+  loadInstrument();
+
+  // add the ILL data from here for now, ideally need a transformation package
+  loadILLMetaData(entry);
+
+  setProperty("OutputWorkspace", m_localWorkspace);
+}
+
+void LoadQKK::createWorkspace(NeXus::NXEntry &entry) {
+  // Naturally, the relevant data is in the group "data"
   NeXus::NXData data = entry.openNXData("data");
-  // Read in wavelength value
   double wavelength = static_cast<double>(data.getFloat("wavelength"));
-  // open the data set with the counts. It is identified by the signal=1
-  // attribute
+  // open and load the data set with the counts
   NeXus::NXInt hmm = data.openIntData();
-  // Read the data into memory
   hmm.load();
 
   // Get the wavelength spread
@@ -97,87 +133,13 @@ void LoadQKK::exec() {
     throw std::runtime_error("Error in data dimensions: " + std::to_string(ny) + " X " + std::to_string(nx));
   }
 
-  // Build instrument geometry
-
-  // Create a new instrument and set its name
-  std::string instrumentname = "QUOKKA";
-  Geometry::Instrument_sptr instrument(new Geometry::Instrument(instrumentname));
-
-  // Add dummy source and samplepos to instrument
-
-  // Create an instrument component wich will represent the sample position.
-  Geometry::Component *samplepos = new Geometry::Component("Sample", instrument.get());
-  instrument->add(samplepos);
-  instrument->markAsSamplePos(samplepos);
-  // Put the sample in the centre of the coordinate system
-  samplepos->setPos(0.0, 0.0, 0.0);
-
-  // Create a component to represent the source
-  Geometry::ObjComponent *source = new Geometry::ObjComponent("Source", instrument.get());
-  instrument->add(source);
-  instrument->markAsSource(source);
-
-  // Read in the L1 value and place the source at (0,0,-L1)
-  double l1 = static_cast<double>(entry.getFloat("instrument/parameters/L1"));
-  source->setPos(0.0, 0.0, -1.0 * l1);
-
-  // Create a component for the detector.
-
-  // We assumed that these are the dimensions of the detector, and height is in
-  // y direction and width is in x direction
-  double height = static_cast<double>(entry.getFloat("instrument/detector/active_height"));
-  double width = static_cast<double>(entry.getFloat("instrument/detector/active_width"));
-  // Convert them to metres
-  height /= 1000;
-  width /= 1000;
-
-  // We assumed that individual pixels have the same size and shape of a cuboid
-  // with dimensions:
-  double pixel_height = height / static_cast<double>(ny);
-  double pixel_width = width / static_cast<double>(nx);
-  // Create size strings for shape creation
-  std::string pixel_height_str = boost::lexical_cast<std::string>(pixel_height / 2);
-  std::string pixel_width_str = boost::lexical_cast<std::string>(pixel_width / 2);
-  // Set the depth of a pixel to a very small number
-  std::string pixel_depth_str = "0.00001";
-
-  // Create a RectangularDetector which represents a rectangular array of pixels
-  Geometry::RectangularDetector *bank = new Geometry::RectangularDetector("bank", instrument.get());
-  // Define shape of a pixel as an XML string. See
-  // http://www.mantidproject.org/HowToDefineGeometricShape for details
-  // on shapes in Mantid.
-  std::string detXML = "<cuboid id=\"pixel\">"
-                       "<left-front-bottom-point   x= \"" +
-                       pixel_width_str + "\" y=\"-" + pixel_height_str +
-                       "\" z=\"0\"  />"
-                       "<left-front-top-point      x= \"" +
-                       pixel_width_str + "\" y=\"-" + pixel_height_str + "\" z=\"" + pixel_depth_str +
-                       "\"  />"
-                       "<left-back-bottom-point    x=\"-" +
-                       pixel_width_str + "\" y=\"-" + pixel_height_str +
-                       "\" z=\"0\"  />"
-                       "<right-front-bottom-point  x= \"" +
-                       pixel_width_str + "\" y= \"" + pixel_height_str +
-                       "\" z=\"0\"  />"
-                       "</cuboid>";
-  // Create a shape object which will be shared by all pixels.
-  auto shape = Geometry::ShapeFactory().createShape(detXML);
-  // Initialise the detector specifying the sizes.
-  bank->initialize(shape, int(nx), 0, pixel_width, int(ny), 0, pixel_height, 1, true, int(nx));
-  for (int i = 0; i < static_cast<int>(ny); ++i)
-    for (int j = 0; j < static_cast<int>(nx); ++j) {
-      instrument->markAsDetector(bank->getAtXY(j, i).get());
-    }
-  // Position the detector so the z axis goes through its centre
-  bank->setPos(-width / 2, -height / 2, 0);
-
   // Create a workspace with nHist spectra and a single y bin.
-  auto outputWorkspace =
-      DataObjects::create<DataObjects::Workspace2D>(instrument, Indexing::IndexInfo(nHist), HistogramData::BinEdges(2));
+  m_localWorkspace =
+      DataObjects::create<DataObjects::Workspace2D>(Indexing::IndexInfo(nHist), HistogramData::BinEdges(2));
   // Set the units of the x axis as Wavelength
-  outputWorkspace->getAxis(0)->unit() = UnitFactory::Instance().create("Wavelength");
+  m_localWorkspace->getAxis(0)->unit() = UnitFactory::Instance().create("Wavelength");
   // Set the units of the data as Counts
-  outputWorkspace->setYUnitLabel("Counts");
+  m_localWorkspace->setYUnitLabel("Counts");
 
   using namespace HistogramData;
   const BinEdges binEdges = {wavelength0, wavelength1};
@@ -187,11 +149,94 @@ void LoadQKK::exec() {
     auto c = hmm(0, x, y);
 
     Counts yValue = {static_cast<double>(c)};
-    outputWorkspace->setHistogram(index, binEdges, yValue);
+    m_localWorkspace->setHistogram(index, binEdges, yValue);
   }
+}
 
-  outputWorkspace->setTitle(entry.getString("experiment/title"));
-  setProperty("OutputWorkspace", std::move(outputWorkspace));
+/// Load the instrument definition.
+void LoadQKK::loadInstrument() {
+
+  // loads the IDF and parameter file
+  auto loadInstrumentAlg = createChildAlgorithm("LoadInstrument");
+  loadInstrumentAlg->setProperty("Workspace", m_localWorkspace);
+  loadInstrumentAlg->setPropertyValue("InstrumentName", "QUOKKA");
+  loadInstrumentAlg->setProperty("RewriteSpectraMap", Mantid::Kernel::OptionalBool(true));
+  loadInstrumentAlg->executeAsChildAlg();
+}
+
+void LoadQKK::setFinalProperties(const std::string &filename) {
+  API::Run &runDetails = m_localWorkspace->mutableRun();
+  NXhandle nxHandle;
+  NXstatus nxStat = NXopen(filename.c_str(), NXACC_READ, &nxHandle);
+
+  if (nxStat != NX_ERROR) {
+    m_loadHelper.addNexusFieldsToWsRun(nxHandle, runDetails);
+    NXclose(&nxHandle);
+  }
+}
+
+void LoadQKK::loadMetaData(NeXus::NXEntry &entry) {
+  // the IDF logfile parameter are required to be time series entries
+  NeXus::NXData params = entry.openNXData("instrument/parameters");
+  double offsetX = params.getFloat("BeamCenterX");
+  double offsetY = params.getFloat("BeamCenterZ");
+  double offsetL1 = params.getFloat("L1");
+  double offsetL2 = params.getFloat("L2");
+  API::LogManager &logManager = m_localWorkspace->mutableRun();
+
+  std::string startDate = entry.getString("start_time");
+  // std::string isoStart = m_loadHelper.dateTimeInIsoFormat(startDate);
+
+  AddSinglePointTimeSeriesProperty(logManager, startDate, "L1", offsetL1);
+  AddSinglePointTimeSeriesProperty(logManager, startDate, "L2", offsetL2);
+  AddSinglePointTimeSeriesProperty(logManager, startDate, "BeamCenterX", offsetX);
+  AddSinglePointTimeSeriesProperty(logManager, startDate, "BeamCenterY", offsetY);
+
+  // end_time is not set, so add duration to the start time
+  API::Run &runDetails = m_localWorkspace->mutableRun();
+  double duration = entry.openNXData("instrument/detector").getFloat("time");
+  Types::Core::DateAndTime startTime(entry.getString("start_time"));
+  auto endTime = startTime + duration;
+  runDetails.addProperty<std::string>("start_time", startTime.toISO8601String(), true);
+  runDetails.addProperty<double>("duration", duration, true);
+  runDetails.addProperty<std::string>("end_time", endTime.toISO8601String(), true);
+
+  // set the facility
+  runDetails.addProperty<std::string>("Facility", std::string("ANSTO"));
+}
+
+void LoadQKK::loadILLMetaData(NeXus::NXEntry &entry) {
+  g_log.debug("Loading ILL metadata...");
+  API::Run &runDetails = m_localWorkspace->mutableRun();
+  int runNumber = entry.openNXData("instrument").getInt("run_number");
+  if (runNumber == 0) {
+    runNumber = GetRunNumber(entry);
+  }
+  runDetails.addProperty<int>("run_number", runNumber);
+
+  // now common SANS components
+  runDetails.addProperty<std::string>("sample_description", entry.openNXData("sample").getString("description"), true);
+  runDetails.addProperty<std::string>("instrument_name", "QUOKKA", true);
+  runDetails.addProperty<double>("sample.thickness", 0.1 * entry.openNXData("sample").getFloat("SampleThickness"), "cm",
+                                 true);
+  runDetails.addProperty<int>("monitor1.data", entry.openNXData("monitor").getInt("bm1_counts"), true);
+
+  double wavelength = entry.openNXData("instrument/velocity_selector").getFloat("wavelength");
+  double wvSpread = entry.openNXData("instrument/velocity_selector").getFloat("wavelength_spread");
+  double wavelengthRes = 100 * wvSpread / wavelength;
+  // round also the wavelength res to avoid unnecessary rebinning during
+  // merge runs
+  wavelengthRes = std::round(wavelengthRes * 100) / 100.;
+  runDetails.addProperty<double>("selector.wavelength", wavelength, "A", true);
+  runDetails.addProperty<double>("selector.wavelength_res", wavelengthRes, "%", true);
+
+  // collimation data and attenuation
+
+  // sample aperture
+  double apx = entry.openNXData("instrument/parameters").getFloat("EApX");
+  double apy = entry.openNXData("instrument/parameters").getFloat("EApZ");
+  runDetails.addProperty<double>("Beam.sample_ap_x_or_diam", apx, "mm", true);
+  runDetails.addProperty<double>("Beam.sample_ap_y", apy, "mm", true);
 }
 
 } // namespace DataHandling

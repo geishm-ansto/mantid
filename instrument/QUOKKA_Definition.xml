@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- For help on the notation used to specify an Instrument Definition File
+     see http://www.mantidproject.org/IDF -->
+<instrument
+  xmlns="http://www.mantidproject.org/IDF/1.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.mantidproject.org/IDF/1.0 http://schema.mantidproject.org/IDF/1.0/IDFSchema.xsd"
+  name="BILBY"
+  valid-from = "1901-01-01 00:00:00"
+  valid-to = "2100-01-01 00:00:00"
+  last-modified="2016-04-15 00:00:00">
+
+
+  <defaults>
+    <length unit="meter"/>
+    <angle unit="degree"/>
+    <reference-frame>
+      <!-- The z-axis is set parallel to and in the direction of the beam. the
+           y-axis points up and the coordinate system is right handed. -->
+      <along-beam axis="z"/>
+      <pointing-up axis="y"/>
+      <handedness val="right"/>
+    </reference-frame>
+    <default-view axis-view="z-"/>
+  </defaults>
+
+  <!-- source and sample-position components -->
+  <component name="Source" type="source">
+    <!-- in Mantid source is defined where T0 starts -->
+    <location x="0.0" y="0.0" />
+    <parameter name="z">
+      <logfile id="L1" eq="-0.001*value"/>
+      <!-- It is NOT L1 in terms of SANS; it is distance between origin T0 the sample -->
+    </parameter>
+  </component>
+  <type name="source" is="Source" />
+
+  <component name="Sample-Holder" type="some-sample-holder">
+    <location z="0.0" x="0.0" y="0.0"/>
+  </component>
+  <type name="some-sample-holder" is="SamplePos" />
+
+  <component type="Panel"  idstart="0" idfillbyfirst="y" idstepbyrow="192">
+    <location>
+      <parameter name="x">
+        <logfile id="BeamCenterX" eq="+0.005*value"/>
+      </parameter>
+      <parameter name="y">
+        <logfile id="BeamCenterY" eq="-0.005*value"/>
+      </parameter>
+      <parameter name="z">
+        <logfile id="L2" eq="0.001*value+0.800"/>
+      </parameter>    
+    </location>
+  </component>
+
+  <type name="Panel" is="RectangularDetector" type="Pixel"
+      xpixels="192" xstart="0.0" xstep="-0.005"
+      ypixels="192" ystart="0.0" ystep="+0.005" >
+  </type>
+
+  <!-- Pixel for Detectors. Shape defined to be a (0.001m)^2 square in XY-plane with tickness 0.0001m -->
+  <type is="detector" name="Pixel">
+    <cuboid id="pixel-shape">
+      <left-front-bottom-point x="-0.0025" y="-0.0025" z="0.0"/>
+      <left-front-top-point x="-0.0025" y="+0.0025" z="0.0"/>
+      <left-back-bottom-point x="-0.0025" y="-0.0025" z="-0.0001"/>
+      <right-front-bottom-point x="-0.0025" y="+0.0025" z="0.0"/>
+    </cuboid>
+    <algebra val="pixel-shape"/>
+  </type>
+
+</instrument>

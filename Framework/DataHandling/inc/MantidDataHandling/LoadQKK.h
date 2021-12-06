@@ -10,6 +10,7 @@
 // Includes
 //---------------------------------------------------
 #include "MantidAPI/IFileLoader.h"
+#include "MantidDataHandling/LoadHelper.h"
 #include "MantidKernel/NexusDescriptor.h"
 
 namespace Mantid {
@@ -43,6 +44,25 @@ private:
   void init() override;
   /// Execution code
   void exec() override;
+
+  // load the instrument definition and instrument parameters
+  void loadInstrument();
+
+  // create workspace
+  void createWorkspace(NeXus::NXEntry &);
+
+  // adds all the nexus fields
+  void setFinalProperties(const std::string &filename);
+
+  // loads base parameters needed by reduction
+  void loadMetaData(NeXus::NXEntry &);
+
+  // loads the meta data required by the ILL reduction processing
+  void loadILLMetaData(NeXus::NXEntry &);
+
+  LoadHelper m_loadHelper;                    ///< Load helper for metadata
+  std::string m_instrumentName;               ///< Name of the instrument
+  API::MatrixWorkspace_sptr m_localWorkspace; ///< to-be output workspace
 };
 } // namespace DataHandling
 } // namespace Mantid
